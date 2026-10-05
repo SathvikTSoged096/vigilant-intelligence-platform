@@ -1,0 +1,1 @@
+export default function EntityPanel({entity}){if(!entity)return null;return <div className="panel p-3"><div className="eyebrow">ENTITY PROFILE</div><h2 className="text-white mt-1">{entity.name}</h2><div className="text-xs text-slate-500 mt-2">TYPE: {entity.type}</div><div className="text-xs text-slate-500">CONFIDENCE: {entity.confidence??'—'}</div></div>}

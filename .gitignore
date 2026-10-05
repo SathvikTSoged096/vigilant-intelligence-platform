@@ -1,0 +1,54 @@
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Build
+dist/
+build/
+frontend/dist/
+
+# Application data
+storage/
+uploads/
+data/
+*.log
+
+# Uploaded documents
+*.pdf
+
+# Large ML models
+*.h5
+*.hdf5
+*.keras
+*.pth
+*.pt
+*.onnx
+*.safetensors
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

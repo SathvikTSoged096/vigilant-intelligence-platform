@@ -1,0 +1,1 @@
+export default function ImageIntelligence({items=[]}){return <div className="panel"><div className="panel-title">IMAGE INTELLIGENCE</div><div className="p-3 grid grid-cols-2 gap-2">{items.map((x,i)=><div className="border border-line p-2 text-[9px]" key={i}>IMAGE {i}<div className="text-slate-500 mt-2">{x.status}</div></div>)}</div></div>}

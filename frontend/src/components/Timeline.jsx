@@ -1,0 +1,1 @@
+export default function Timeline({events=[]}){return <div className="panel"><div className="panel-title">TIMELINE</div><div className="p-3 space-y-2">{events.map((e,i)=><div key={i} className="border-l border-blue-500/30 pl-3"><div className="font-mono text-[9px] text-blue-400">{e.timestamp||'TIME UNKNOWN'}</div><div className="text-xs">{e.label}</div></div>)}</div></div>}

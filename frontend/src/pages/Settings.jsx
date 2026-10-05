@@ -1,0 +1,1 @@
+export default function Settings(){return <div className="space-y-3"><div className="eyebrow">SYSTEM / SETTINGS</div><div className="panel p-4 text-xs text-slate-400 space-y-2"><div>AI ROUTE: /api/v1/reports/generate</div><div>GRAPH ROUTES: /api/v1/graph/*</div><div>AUTH: JWT / BEARER</div></div></div>}
