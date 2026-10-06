@@ -1,15 +1,15 @@
 import {
-    Background,
-    Controls,
-    Handle,
-    MarkerType,
-    MiniMap,
-    Position,
-    ReactFlow,
-    ReactFlowProvider,
-    useEdgesState,
-    useNodesState,
-    useReactFlow,
+  Background,
+  Controls,
+  Handle,
+  MarkerType,
+  MiniMap,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
 } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
@@ -341,6 +341,30 @@ function GraphCanvas({
       );
 
   }, [nodes]);
+
+
+  useEffect(() => {
+    if (
+      filter !== "FOCUS_PERSON" ||
+      !selectedPerson
+    ) {
+      return;
+    }
+
+    const person = nodes.find(
+      node =>
+        String(node.id) === String(selectedPerson)
+    );
+
+    if (person && onNodeSelect) {
+      onNodeSelect(person);
+    }
+  }, [
+    filter,
+    selectedPerson,
+    nodes,
+    onNodeSelect,
+  ]);
 
 
   /*
@@ -724,11 +748,20 @@ function GraphCanvas({
                   value={
                     selectedPerson
                   }
-                  onChange={(e) =>
-                    setSelectedPerson(
-                      e.target.value
-                    )
-                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+
+                    setSelectedPerson(value);
+
+                    const person = nodes.find(
+                      node =>
+                        String(node.id) === String(value)
+                    );
+
+                    if (person && onNodeSelect) {
+                      onNodeSelect(person);
+                    }
+                  }}
                   className="
                     bg-[#05070a]
                     border
