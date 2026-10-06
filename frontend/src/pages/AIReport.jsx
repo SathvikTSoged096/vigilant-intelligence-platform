@@ -1,4 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileText,
+  RefreshCw,
+} from "lucide-react";
+
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import {
+  useSearchParams,
+} from "react-router-dom";
 
 import { getNodes } from "../api/graph";
 import {
@@ -6,205 +21,336 @@ import {
   streamDossier,
 } from "../api/reports";
 
-
-function Section({ title, children }) {
+function Stat({ label, value }) {
   return (
-    <section className="border border-slate-800 bg-slate-950/60 rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/60">
-        <h2 className="text-xs font-semibold tracking-[0.18em] text-slate-300">
-          {title}
-        </h2>
+    <div className="border border-line bg-[#0E141F] p-3">
+
+      <div className="eyebrow">
+        {label}
       </div>
 
-      <div className="p-4">
-        {children}
+      <div className="mt-2 font-mono text-sm text-blue-400">
+        {value ?? "—"}
       </div>
-    </section>
-  );
-}
 
-
-function EntityList({ items, emptyText = "No entities available." }) {
-  if (!items || items.length === 0) {
-    return (
-      <div className="text-xs text-slate-500">
-        {emptyText}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {items.map((item, index) => (
-        <div
-          key={`${item.entity_key || item.name || "entity"}-${index}`}
-          className="border border-slate-800 rounded-md px-3 py-2 bg-slate-950"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-slate-200">
-              {item.name || "Unknown"}
-            </div>
-
-            {item.type && (
-              <span className="text-[10px] uppercase tracking-wider text-slate-500">
-                {item.type}
-              </span>
-            )}
-          </div>
-
-          {item.relationship && (
-            <div className="text-xs text-cyan-400 mt-1">
-              {item.relationship}
-            </div>
-          )}
-
-          {item.evidence && (
-            <div className="text-xs text-slate-500 mt-1">
-              {item.evidence}
-            </div>
-          )}
-        </div>
-      ))}
     </div>
   );
 }
 
 
+function Association({ item }) {
+  return (
+    <div className="border-b border-line py-3 last:border-b-0">
+
+      <div className="flex items-start justify-between gap-3">
+
+        <div>
+
+          <div className="text-xs text-slate-300">
+            {item.name || "UNKNOWN"}
+          </div>
+
+          {item.relationship && (
+            <div className="mt-1 font-mono text-[9px] text-blue-400">
+              {item.relationship}
+            </div>
+          )}
+
+        </div>
+
+        {item.type && (
+          <div className="font-mono text-[8px] text-slate-600">
+            {item.type}
+          </div>
+        )}
+
+      </div>
+
+      {item.evidence && (
+        <div className="mt-2 text-[10px] leading-4 text-slate-500">
+          {item.evidence}
+        </div>
+      )}
+
+      {item.confidence != null && (
+        <div className="mt-2 font-mono text-[8px] text-slate-600">
+          CONFIDENCE:{" "}
+          {(Number(item.confidence) * 100).toFixed(0)}%
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+
+function AssociationPanel({
+  title,
+  items,
+  empty,
+}) {
+  return (
+    <section className="panel p-4">
+
+      <div className="flex items-center justify-between">
+
+        <div className="eyebrow">
+          {title}
+        </div>
+
+        <div className="font-mono text-[9px] text-slate-600">
+          {items?.length || 0}
+        </div>
+
+      </div>
+
+      {!items || items.length === 0 ? (
+
+        <div className="mt-4 text-[10px] text-slate-600">
+          {empty}
+        </div>
+
+      ) : (
+
+        <div className="mt-3">
+          {items.map((item, index) => (
+            <Association
+              key={`${item.name}-${index}`}
+              item={item}
+            />
+          ))}
+        </div>
+
+      )}
+
+    </section>
+  );
+}
+
+
 export default function AIReport() {
+
+  const [searchParams] =
+    useSearchParams();
+
+  const requestedEntity =
+    searchParams.get("entity");
+
   const [nodes, setNodes] = useState([]);
-  const [entityKey, setEntityKey] = useState("");
 
-  const [report, setReport] = useState(null);
-  const [status, setStatus] = useState("IDLE");
-  const [error, setError] = useState("");
+  const [entityKey, setEntityKey] =
+    useState("");
 
-  /*
-   * IMPORTANT:
-   * Only PERSON entities are allowed to become dossier targets.
-   */
-  const personNodes = useMemo(() => {
+  const [report, setReport] =
+    useState(null);
+
+  const [status, setStatus] =
+    useState("IDLE");
+
+  const [error, setError] =
+    useState("");
+
+
+  // =====================================================
+  // PERSON TARGETS ONLY
+  // =====================================================
+
+  const people = useMemo(() => {
+
     return nodes
       .filter(
         (node) =>
-          String(node.type || "").toUpperCase() === "PERSON"
+          String(node.type || "")
+            .toUpperCase() === "PERSON"
       )
-      .sort((a, b) =>
-        String(a.name || "").localeCompare(
-          String(b.name || "")
-        )
+      .sort(
+        (a, b) =>
+          String(a.name || "")
+            .localeCompare(
+              String(b.name || "")
+            )
       );
+
   }, [nodes]);
 
 
-  const selectedNode = useMemo(() => {
-    return personNodes.find(
-      (node) => node.entity_key === entityKey
+  // =====================================================
+  // SELECTED PERSON
+  // =====================================================
+
+  const selectedPerson = useMemo(() => {
+
+    return people.find(
+      (node) =>
+        node.entity_key === entityKey
     );
-  }, [personNodes, entityKey]);
+
+  }, [people, entityKey]);
 
 
-  /*
-   * Load graph nodes.
-   */
+  // =====================================================
+  // LOAD PEOPLE
+  // =====================================================
+
   useEffect(() => {
+
     let mounted = true;
 
-    async function loadNodes() {
+    async function load() {
+
       try {
-        const response = await getNodes();
 
-        if (!mounted) return;
+        const response =
+          await getNodes();
 
-        const loadedNodes = response.data?.nodes || [];
+        if (!mounted) {
+          return;
+        }
 
-        setNodes(loadedNodes);
+        const graphNodes =
+          response.data?.nodes || [];
+
+        setNodes(graphNodes);
 
         /*
-         * Restore saved dossier only if it belongs to a PERSON.
+         * Target selection priority:
+         *
+         * 1. PERSON supplied by the Knowledge Graph URL
+         * 2. Previously saved dossier target
+         * 3. First available PERSON
          */
-        const saved = getDossierState();
 
-        const savedEntityKey = saved?.entityKey;
+        const requestedPerson =
+          requestedEntity
+            ? graphNodes.find(
+                (node) =>
+                  node.entity_key ===
+                    requestedEntity &&
+                  String(node.type || "")
+                    .toUpperCase() ===
+                    "PERSON"
+              )
+            : null;
 
-        const savedPerson = loadedNodes.find(
-          (node) =>
-            node.entity_key === savedEntityKey &&
-            String(node.type || "").toUpperCase() === "PERSON"
-        );
+        const saved =
+          getDossierState();
 
-        if (savedPerson) {
-          setEntityKey(savedPerson.entity_key);
-        } else {
-          /*
-           * Default to first PERSON.
-           */
-          const firstPerson = loadedNodes.find(
+        const savedKey =
+          saved?.entityKey;
+
+        const savedPerson =
+          graphNodes.find(
             (node) =>
-              String(node.type || "").toUpperCase() === "PERSON"
+              node.entity_key ===
+                savedKey &&
+              String(node.type || "")
+                .toUpperCase() ===
+                "PERSON"
           );
 
-          if (firstPerson) {
-            setEntityKey(firstPerson.entity_key);
+        if (requestedEntity) {
+
+          if (requestedPerson) {
+
+            setEntityKey(
+              requestedPerson.entity_key
+            );
+
+            setError("");
+
+          } else {
+
+            setEntityKey("");
+
+            setError(
+              "Requested PERSON target was not found."
+            );
+
           }
+
+        } else if (savedPerson) {
+
+          setEntityKey(
+            savedPerson.entity_key
+          );
+
+        } else {
+
+          const firstPerson =
+            graphNodes.find(
+              (node) =>
+                String(node.type || "")
+                  .toUpperCase() ===
+                "PERSON"
+            );
+
+          if (firstPerson) {
+
+            setEntityKey(
+              firstPerson.entity_key
+            );
+
+          }
+
         }
 
       } catch (err) {
+
         console.error(err);
 
         if (mounted) {
-          setError("Unable to load PERSON entities.");
+
+          setError(
+            "Unable to load PERSON entities."
+          );
+
         }
+
       }
+
     }
 
-    loadNodes();
+    load();
 
     return () => {
       mounted = false;
     };
-  }, []);
+
+  }, [requestedEntity]);
 
 
-  async function generateReport() {
+  // =====================================================
+  // GENERATE
+  // =====================================================
+
+  async function generate() {
+
     setError("");
 
-    /*
-     * Safety check:
-     * Never generate a dossier for a non-PERSON entity.
-     */
-    if (!selectedNode) {
-      setError("Please select a PERSON entity.");
+    if (!selectedPerson) {
+
+      setError(
+        "Select a PERSON target."
+      );
+
       return;
     }
 
-    if (
-      String(selectedNode.type || "").toUpperCase() !== "PERSON"
-    ) {
-      setError("AI dossiers are currently available only for PERSON entities.");
-      return;
-    }
+    setStatus("GRAPH CONTEXT");
 
-    setStatus("PROCESSING");
-
-    setReport({
-      target_name: selectedNode.name,
-      target_type: "PERSON",
-      summary: "",
-      network_signals: {},
-      associations: {},
-      evidence: [],
-    });
+    setReport(null);
 
     try {
+
       await streamDossier(
         entityKey,
         (event, data) => {
 
           if (event === "progress") {
+
             setStatus(
-              data?.phase
-                ? data.phase
-                : "PROCESSING"
+              data?.phase ||
+              "PROCESSING"
             );
 
             return;
@@ -212,121 +358,183 @@ export default function AIReport() {
 
 
           if (event === "chunk") {
-            setReport((previous) => ({
-              ...(previous || {}),
-              summary:
-                (previous?.summary || "") +
-                (data?.text || ""),
-            }));
+
+            setReport(
+              (previous) => ({
+                ...(previous || {}),
+
+                target_name:
+                  selectedPerson.name,
+
+                target_type:
+                  "PERSON",
+
+                summary:
+                  (
+                    previous?.summary ||
+                    ""
+                  ) +
+                  (
+                    data?.text ||
+                    ""
+                  ),
+              })
+            );
 
             return;
           }
 
 
           if (event === "complete") {
+
             setReport(data);
-            setStatus("COMPLETE");
+
+            setStatus(
+              "COMPLETE"
+            );
+
             return;
           }
 
 
           if (event === "error") {
+
             setError(
               data?.message ||
-              "Unable to generate dossier."
+              "Dossier generation failed."
             );
 
-            setStatus("ERROR");
+            setStatus(
+              "FAILED"
+            );
+
           }
+
         }
       );
 
     } catch (err) {
+
       console.error(err);
 
       setError(
         err?.message ||
-        "Unable to generate dossier."
+        "Dossier generation failed."
       );
 
-      setStatus("ERROR");
+      setStatus(
+        "FAILED"
+      );
+
     }
+
   }
 
 
+  // =====================================================
+  // RENDER
+  // =====================================================
+
   return (
-    <div className="min-h-full bg-slate-950 text-slate-200 p-6">
 
-      {/* HEADER */}
-      <div className="mb-6">
+    <div className="space-y-4">
 
-        <div className="flex items-center justify-between">
 
-          <div>
-            <div className="text-xs tracking-[0.25em] text-cyan-500 mb-1">
-              VIGILANT / AI INTELLIGENCE
-            </div>
+      {/* =================================================
+          HEADER
+      ================================================= */}
 
-            <h1 className="text-2xl font-semibold text-white">
-              AI Target Dossier
-            </h1>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
 
-            <p className="text-sm text-slate-500 mt-1">
-              Evidence-based analytical assessment for PERSON entities.
-            </p>
+        <div>
+
+          <div className="eyebrow">
+            INTELLIGENCE / TARGET ANALYSIS
           </div>
+
+          <h1 className="mt-1 text-xl font-semibold">
+            AI Target Dossier
+          </h1>
+
+          <div className="mt-1 font-mono text-[9px] text-slate-600">
+            PERSON-LEVEL NETWORK + EVIDENCE ANALYSIS
+          </div>
+
+        </div>
+
+
+        <div className="font-mono text-[9px] text-slate-600">
+
+          {people.length} PERSON TARGETS
 
         </div>
 
       </div>
 
 
-      {/* TARGET SELECTION */}
-      <Section title="TARGET PERSON">
+      {/* =================================================
+          TARGET CONTROL
+      ================================================= */}
 
-        <div className="flex flex-col lg:flex-row gap-4">
+      <section className="panel p-4">
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
 
           <div className="flex-1">
 
-            <label className="block text-[10px] tracking-[0.2em] text-slate-500 mb-2">
-              PERSON ENTITY
-            </label>
+            <div className="eyebrow">
+              TARGET PERSON
+            </div>
 
             <select
+              className="input-tactical mt-2 w-full"
               value={entityKey}
-              onChange={(e) => {
-                setEntityKey(e.target.value);
+              onChange={(event) => {
+
+                setEntityKey(
+                  event.target.value
+                );
+
                 setReport(null);
+
                 setStatus("IDLE");
+
                 setError("");
+
               }}
-              className="
-                w-full
-                bg-slate-900
-                border border-slate-700
-                rounded-md
-                px-3
-                py-3
-                text-sm
-                text-slate-200
-                outline-none
-                focus:border-cyan-500
-              "
+              disabled={
+                status ===
+                  "GRAPH CONTEXT" ||
+                status ===
+                  "AI ASSESSMENT"
+              }
             >
 
-              {personNodes.length === 0 ? (
+              {people.length === 0 ? (
+
                 <option value="">
-                  No PERSON entities found
+                  NO PERSON ENTITIES
                 </option>
+
               ) : (
-                personNodes.map((node) => (
-                  <option
-                    key={node.entity_key}
-                    value={node.entity_key}
-                  >
-                    {node.name} — PERSON
-                  </option>
-                ))
+
+                people.map(
+                  (person) => (
+
+                    <option
+                      key={
+                        person.entity_key
+                      }
+                      value={
+                        person.entity_key
+                      }
+                    >
+                      {person.name}
+                    </option>
+
+                  )
+                )
+
               )}
 
             </select>
@@ -334,322 +542,416 @@ export default function AIReport() {
           </div>
 
 
-          <div className="flex items-end">
+          <button
+            className="btn-secondary flex items-center justify-center gap-2"
+            onClick={generate}
+            disabled={
+              !selectedPerson ||
+              status ===
+                "GRAPH CONTEXT" ||
+              status ===
+                "AI ASSESSMENT"
+            }
+          >
 
-            <button
-              onClick={generateReport}
-              disabled={
-                !selectedNode ||
-                status === "PROCESSING" ||
-                status === "GRAPH CONTEXT" ||
-                status === "AI ASSESSMENT"
-              }
-              className="
-                px-6
-                py-3
-                rounded-md
-                bg-cyan-600
-                hover:bg-cyan-500
-                disabled:bg-slate-800
-                disabled:text-slate-600
-                text-white
-                text-sm
-                font-semibold
-                transition
-              "
-            >
-              {status === "PROCESSING" ||
-              status === "GRAPH CONTEXT" ||
-              status === "AI ASSESSMENT"
-                ? "GENERATING..."
-                : "GENERATE DOSSIER"}
-            </button>
+            {status ===
+                "GRAPH CONTEXT" ||
+            status ===
+                "AI ASSESSMENT" ? (
 
-          </div>
+              <RefreshCw
+                size={13}
+                className="animate-spin"
+              />
+
+            ) : (
+
+              <FileText
+                size={13}
+              />
+
+            )}
+
+            {status ===
+                "GRAPH CONTEXT" ||
+            status ===
+                "AI ASSESSMENT"
+              ? "GENERATING..."
+              : "GENERATE DOSSIER"}
+
+          </button>
 
         </div>
 
-
-        {/* PERSON COUNT */}
-        <div className="mt-3 text-xs text-slate-500">
-          {personNodes.length} PERSON{" "}
-          {personNodes.length === 1 ? "entity" : "entities"} available
-        </div>
-
-      </Section>
+      </section>
 
 
-      {/* ERROR */}
+      {/* =================================================
+          ERROR
+      ================================================= */}
+
       {error && (
-        <div className="mt-4 border border-red-900 bg-red-950/30 rounded-md p-4">
-          <div className="text-xs tracking-wider text-red-400">
-            ERROR
-          </div>
 
-          <div className="text-sm text-red-300 mt-1">
+        <div className="border border-red-500/20 bg-red-500/5 p-3">
+
+          <div className="flex gap-2 text-xs text-red-400">
+
+            <AlertTriangle
+              size={14}
+            />
+
             {error}
-          </div>
-        </div>
-      )}
 
-
-      {/* EMPTY STATE */}
-      {!report && personNodes.length === 0 && !error && (
-        <div className="mt-6 border border-slate-800 rounded-lg p-8 text-center">
-
-          <div className="text-sm text-slate-400">
-            No PERSON entities are currently available.
-          </div>
-
-          <div className="text-xs text-slate-600 mt-2">
-            Upload and process documents containing person entities
-            before generating a dossier.
           </div>
 
         </div>
+
       )}
 
 
-      {/* SELECTED PERSON */}
-      {selectedNode && !report && (
-        <div className="mt-6">
+      {/* =================================================
+          SELECTED TARGET
+      ================================================= */}
 
-          <Section title="SELECTED PERSON">
+      {selectedPerson && (
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <section className="panel p-4">
 
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  NAME
-                </div>
+          <div className="eyebrow">
+            TARGET PROFILE
+          </div>
 
-                <div className="text-lg text-white mt-1">
-                  {selectedNode.name}
-                </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+
+            <Stat
+              label="TARGET"
+              value={
+                selectedPerson.name
+              }
+            />
+
+            <Stat
+              label="TYPE"
+              value="PERSON"
+            />
+
+            <Stat
+              label="CONFIDENCE"
+              value={
+                selectedPerson.confidence !=
+                null
+                  ? `${(
+                      Number(
+                        selectedPerson.confidence
+                      ) * 100
+                    ).toFixed(0)}%`
+                  : "N/A"
+              }
+            />
+
+            <Stat
+              label="ENTITY KEY"
+              value={
+                selectedPerson.entity_key
+              }
+            />
+
+          </div>
+
+        </section>
+
+      )}
+
+
+      {/* =================================================
+          PROCESS
+      ================================================= */}
+
+      {status !== "IDLE" && (
+
+        <section className="panel p-4">
+
+          <div className="flex items-center justify-between">
+
+            <div>
+
+              <div className="eyebrow">
+                DOSSIER PROCESS
               </div>
 
-
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  TYPE
-                </div>
-
-                <div className="text-sm text-cyan-400 mt-1">
-                  PERSON
-                </div>
-              </div>
-
-
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  ENTITY KEY
-                </div>
-
-                <div className="text-xs text-slate-400 mt-1 break-all">
-                  {selectedNode.entity_key}
-                </div>
+              <div className="mt-1 font-mono text-[10px] text-slate-400">
+                {status}
               </div>
 
             </div>
 
-          </Section>
+            {status === "COMPLETE" && (
 
-        </div>
+              <CheckCircle2
+                size={14}
+                className="text-emerald-400"
+              />
+
+            )}
+
+          </div>
+
+        </section>
+
       )}
 
 
-      {/* REPORT */}
+      {/* =================================================
+          DOSSIER
+      ================================================= */}
+
       {report && (
 
-        <div className="mt-6 space-y-6">
+        <>
 
-          {/* TARGET PROFILE */}
-          <Section title="TARGET PROFILE">
+          {/* NETWORK */}
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <section className="panel p-4">
 
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  TARGET
-                </div>
-
-                <div className="text-lg text-white mt-1">
-                  {report.target_name}
-                </div>
-              </div>
-
-
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  TYPE
-                </div>
-
-                <div className="text-sm text-cyan-400 mt-1">
-                  PERSON
-                </div>
-              </div>
-
-
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  NETWORK SCORE
-                </div>
-
-                <div className="text-lg text-white mt-1">
-                  {report.network_score ??
-                    report.threat_score ??
-                    0}
-                </div>
-              </div>
-
-
-              <div>
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  STATUS
-                </div>
-
-                <div className="text-sm text-emerald-400 mt-1">
-                  {status}
-                </div>
-              </div>
-
+            <div className="eyebrow">
+              NETWORK PROFILE
             </div>
 
-          </Section>
+            <div className="mt-3 grid gap-3 md:grid-cols-4">
 
-
-          {/* NETWORK ANALYSIS */}
-          <Section title="NETWORK ANALYSIS">
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-
-              <div className="border border-slate-800 rounded-md p-4">
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  DEGREE CENTRALITY
-                </div>
-
-                <div className="text-2xl text-white mt-2">
-                  {report.network_signals
-                    ?.degree_centrality ?? 0}
-                </div>
-              </div>
-
-
-              <div className="border border-slate-800 rounded-md p-4">
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  BETWEENNESS CENTRALITY
-                </div>
-
-                <div className="text-2xl text-white mt-2">
-                  {report.network_signals
-                    ?.betweenness_centrality ?? 0}
-                </div>
-              </div>
-
-
-              <div className="border border-slate-800 rounded-md p-4">
-                <div className="text-[10px] tracking-wider text-slate-500">
-                  CONNECTED ENTITIES
-                </div>
-
-                <div className="text-2xl text-white mt-2">
-                  {report.network_signals
+              <Stat
+                label="CONNECTED ENTITIES"
+                value={
+                  report.network_signals
                     ?.connected_entities ??
-                    report.neighbors?.length ??
-                    0}
-                </div>
-              </div>
+                  report.neighbors?.length ??
+                  0
+                }
+              />
+
+              <Stat
+                label="DEGREE CENTRALITY"
+                value={
+                  report.network_signals
+                    ?.degree_centrality ??
+                  0
+                }
+              />
+
+              <Stat
+                label="BETWEENNESS"
+                value={
+                  report.network_signals
+                    ?.betweenness_centrality ??
+                  0
+                }
+              />
+
+              <Stat
+                label="NETWORK SCORE"
+                value={
+                  report.network_score ??
+                  report.threat_score ??
+                  0
+                }
+              />
 
             </div>
 
-          </Section>
+          </section>
 
 
-          {/* PEOPLE */}
-          <Section title="PERSON ASSOCIATIONS">
+          {/* ASSOCIATIONS */}
 
-            <EntityList
-              items={report.associations?.people}
-              emptyText="No connected PERSON entities."
+          <div className="grid gap-4 lg:grid-cols-3">
+
+            <AssociationPanel
+              title="PERSON ASSOCIATIONS"
+              items={
+                report.associations
+                  ?.people
+              }
+              empty="NO CONNECTED PERSON ENTITIES"
             />
 
-          </Section>
-
-
-          {/* ORGANIZATIONS */}
-          <Section title="ORGANIZATION ASSOCIATIONS">
-
-            <EntityList
-              items={report.associations?.organizations}
-              emptyText="No connected organizations."
+            <AssociationPanel
+              title="ORGANIZATION ASSOCIATIONS"
+              items={
+                report.associations
+                  ?.organizations
+              }
+              empty="NO CONNECTED ORGANIZATIONS"
             />
 
-          </Section>
-
-
-          {/* LOCATIONS */}
-          <Section title="LOCATION ASSOCIATIONS">
-
-            <EntityList
-              items={report.associations?.locations}
-              emptyText="No connected locations."
+            <AssociationPanel
+              title="LOCATION ASSOCIATIONS"
+              items={
+                report.associations
+                  ?.locations
+              }
+              empty="NO CONNECTED LOCATIONS"
             />
 
-          </Section>
+          </div>
 
 
           {/* IDENTIFIERS */}
-          <Section title="IDENTIFIERS">
 
-            <EntityList
-              items={report.associations?.identifiers}
-              emptyText="No identifiers available."
-            />
+          <section className="panel p-4">
 
-          </Section>
+            <div className="eyebrow">
+              TARGET IDENTIFIERS
+            </div>
+
+            {!report.associations
+              ?.identifiers?.length ? (
+
+              <div className="mt-4 text-[10px] text-slate-600">
+                NO IDENTIFIERS AVAILABLE
+              </div>
+
+            ) : (
+
+              <div className="mt-3 flex flex-wrap gap-2">
+
+                {report.associations
+                  .identifiers
+                  .map(
+                    (identifier, index) => (
+
+                      <div
+                        key={index}
+                        className="border border-line bg-[#0E141F] px-3 py-2 font-mono text-[10px] text-blue-400"
+                      >
+                        {typeof identifier ===
+                        "string"
+                          ? identifier
+                          : JSON.stringify(
+                              identifier
+                            )}
+                      </div>
+
+                    )
+                  )}
+
+              </div>
+
+            )}
+
+          </section>
 
 
           {/* EVIDENCE */}
-          <Section title="SOURCE EVIDENCE">
 
-            <EntityList
-              items={report.evidence}
-              emptyText="No evidence records available."
-            />
+          <section className="panel p-4">
 
-          </Section>
+            <div className="flex items-center justify-between">
 
+              <div className="eyebrow">
+                SOURCE EVIDENCE
+              </div>
 
-          {/* AI ASSESSMENT */}
-          <Section title="AI ASSESSMENT">
+              <div className="font-mono text-[9px] text-slate-600">
+                {report.evidence?.length || 0} RECORDS
+              </div>
 
-            <div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
-              {report.summary ||
-                "No AI assessment was generated."}
             </div>
 
-          </Section>
+
+            {!report.evidence ||
+            report.evidence.length === 0 ? (
+
+              <div className="mt-4 text-[10px] text-slate-600">
+                NO SOURCE EVIDENCE AVAILABLE
+              </div>
+
+            ) : (
+
+              <div className="mt-3">
+
+                {report.evidence.map(
+                  (item, index) => (
+
+                    <div
+                      key={index}
+                      className="border-b border-line py-3 last:border-b-0"
+                    >
+
+                      <div className="flex items-center justify-between">
+
+                        <div className="font-mono text-[9px] text-blue-400">
+                          {item.relationship ||
+                            "RELATED"}
+                        </div>
+
+                        <div className="font-mono text-[8px] text-slate-600">
+                          {item.document_id ||
+                            "SOURCE UNKNOWN"}
+                        </div>
+
+                      </div>
+
+                      <div className="mt-2 text-xs text-slate-300">
+                        {item.entity ||
+                          "UNKNOWN ENTITY"}
+                      </div>
+
+                      <div className="mt-1 text-[10px] leading-5 text-slate-500">
+                        {item.evidence ||
+                          "No evidence text available."}
+                      </div>
+
+                    </div>
+
+                  )
+                )}
+
+              </div>
+
+            )}
+
+          </section>
 
 
-          {/* LIMITATION NOTICE */}
-          <div className="border border-amber-900/60 bg-amber-950/20 rounded-lg p-4">
+          {/* AI */}
 
-            <div className="text-xs tracking-wider text-amber-500">
+          <section className="panel p-4">
+
+            <div className="eyebrow">
+              AI ASSESSMENT
+            </div>
+
+            <div className="mt-4 border-l-2 border-blue-500/40 pl-4 whitespace-pre-wrap text-xs leading-6 text-slate-400">
+
+              {report.summary ||
+                "NO AI ASSESSMENT AVAILABLE"}
+
+            </div>
+
+          </section>
+
+
+          {/* NOTICE */}
+
+          <section className="border border-blue-500/10 bg-blue-500/5 p-3">
+
+            <div className="font-mono text-[9px] text-blue-400">
               ANALYTIC NOTICE
             </div>
 
-            <div className="text-xs text-amber-300/80 mt-2 leading-6">
-              Network connectivity and centrality are analytical
-              signals only. They do not by themselves establish
-              wrongdoing, intent, or criminal activity.
+            <div className="mt-1 text-[10px] leading-5 text-slate-600">
+              Network connectivity is an analytical signal
+              and does not establish wrongdoing, intent,
+              or criminal activity.
             </div>
 
-          </div>
+          </section>
 
-        </div>
+        </>
 
       )}
 
     </div>
+
   );
 }

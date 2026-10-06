@@ -4,6 +4,10 @@ import {
 } from "react";
 
 import {
+  useNavigate,
+} from "react-router-dom";
+
+import {
   getGeospatial,
   getNodes,
   getRelationships,
@@ -15,6 +19,8 @@ import Graph from "../components/Graph";
 
 
 export default function KnowledgeGraph() {
+
+  const navigate = useNavigate();
 
   const [nodes, setNodes] =
     useState([]);
@@ -34,6 +40,10 @@ export default function KnowledgeGraph() {
   const [error, setError] =
     useState("");
 
+
+  // ============================================================
+  // LOAD GRAPH
+  // ============================================================
 
   const loadGraph = async () => {
 
@@ -97,24 +107,19 @@ export default function KnowledgeGraph() {
   };
 
 
+  // ============================================================
+  // LIVE GRAPH SYNC
+  // ============================================================
+
   useEffect(() => {
 
     loadGraph();
-
-
-    /*
-     * Refresh the graph every 3 seconds.
-     *
-     * This allows newly processed documents
-     * to appear without leaving the page.
-     */
 
     const interval =
       setInterval(
         loadGraph,
         3000
       );
-
 
     return () =>
       clearInterval(
@@ -124,11 +129,49 @@ export default function KnowledgeGraph() {
   }, []);
 
 
+  // ============================================================
+  // OPEN TARGET DOSSIER
+  // ============================================================
+
+  const openTargetDossier = () => {
+
+    if (!selectedNode) {
+      return;
+    }
+
+    if (
+      String(
+        selectedNode.type || ""
+      ).toUpperCase() !== "PERSON"
+    ) {
+      return;
+    }
+
+    if (!selectedNode.entity_key) {
+      return;
+    }
+
+    navigate(
+      `/reports?entity=${encodeURIComponent(
+        selectedNode.entity_key
+      )}`
+    );
+
+  };
+
+
+  // ============================================================
+  // RENDER
+  // ============================================================
+
   return (
 
     <div className="space-y-4">
 
-      {/* HEADER */}
+
+      {/* ======================================================
+          HEADER
+      ====================================================== */}
 
       <div className="flex items-end justify-between">
 
@@ -143,7 +186,8 @@ export default function KnowledgeGraph() {
           </h1>
 
           <div className="text-xs text-slate-500 mt-1">
-            Entity relationships, network structure and geospatial intelligence.
+            Entity relationships, network structure and
+            geospatial intelligence.
           </div>
 
         </div>
@@ -156,7 +200,9 @@ export default function KnowledgeGraph() {
       </div>
 
 
-      {/* ERROR */}
+      {/* ======================================================
+          ERROR
+      ====================================================== */}
 
       {error && (
 
@@ -171,7 +217,9 @@ export default function KnowledgeGraph() {
       )}
 
 
-      {/* STATISTICS */}
+      {/* ======================================================
+          STATISTICS
+      ====================================================== */}
 
       <div className="grid grid-cols-3 gap-3">
 
@@ -216,7 +264,9 @@ export default function KnowledgeGraph() {
       </div>
 
 
-      {/* KNOWLEDGE GRAPH */}
+      {/* ======================================================
+          KNOWLEDGE GRAPH
+      ====================================================== */}
 
       <div className="panel">
 
@@ -270,7 +320,9 @@ export default function KnowledgeGraph() {
       </div>
 
 
-      {/* SELECTED ENTITY */}
+      {/* ======================================================
+          SELECTED ENTITY
+      ====================================================== */}
 
       {selectedNode && (
 
@@ -296,66 +348,146 @@ export default function KnowledgeGraph() {
           </div>
 
 
-          <div className="p-4 grid grid-cols-4 gap-4">
+          <div className="p-4">
 
-            <div>
+            {/* ==================================================
+                ENTITY INFORMATION
+            ================================================== */}
 
-              <div className="text-[9px] text-slate-600 font-mono">
-                NAME
+            <div className="grid grid-cols-4 gap-4">
+
+              <div>
+
+                <div className="text-[9px] text-slate-600 font-mono">
+                  NAME
+                </div>
+
+                <div className="text-sm text-white font-mono mt-1">
+                  {selectedNode.name}
+                </div>
+
               </div>
 
-              <div className="text-sm text-white font-mono mt-1">
-                {selectedNode.name}
+
+              <div>
+
+                <div className="text-[9px] text-slate-600 font-mono">
+                  TYPE
+                </div>
+
+                <div className="text-sm text-blue-300 font-mono mt-1">
+                  {selectedNode.type}
+                </div>
+
+              </div>
+
+
+              <div>
+
+                <div className="text-[9px] text-slate-600 font-mono">
+                  DEGREE
+                </div>
+
+                <div className="text-sm text-white font-mono mt-1">
+                  {selectedNode.degree ?? 0}
+                </div>
+
+              </div>
+
+
+              <div>
+
+                <div className="text-[9px] text-slate-600 font-mono">
+                  CONFIDENCE
+                </div>
+
+                <div className="text-sm text-white font-mono mt-1">
+
+                  {selectedNode.confidence != null
+                    ? `${(
+                        Number(
+                          selectedNode.confidence
+                        ) * 100
+                      ).toFixed(0)}%`
+                    : "—"}
+
+                </div>
+
               </div>
 
             </div>
 
 
-            <div>
+            {/* ==================================================
+                ENTITY KEY
+            ================================================== */}
 
-              <div className="text-[9px] text-slate-600 font-mono">
-                TYPE
-              </div>
+            {selectedNode.entity_key && (
 
-              <div className="text-sm text-blue-300 font-mono mt-1">
-                {selectedNode.type}
-              </div>
+              <div className="mt-4">
 
-            </div>
+                <div className="text-[9px] text-slate-600 font-mono">
+                  ENTITY KEY
+                </div>
 
-
-            <div>
-
-              <div className="text-[9px] text-slate-600 font-mono">
-                DEGREE
-              </div>
-
-              <div className="text-sm text-white font-mono mt-1">
-                {selectedNode.degree ?? 0}
-              </div>
-
-            </div>
-
-
-            <div>
-
-              <div className="text-[9px] text-slate-600 font-mono">
-                CONFIDENCE
-              </div>
-
-              <div className="text-sm text-white font-mono mt-1">
-
-                {selectedNode.confidence != null
-                  ? `${(
-                      Number(
-                        selectedNode.confidence
-                      ) * 100
-                    ).toFixed(0)}%`
-                  : "—"}
+                <div className="mt-1 text-[10px] text-slate-500 font-mono">
+                  {selectedNode.entity_key}
+                </div>
 
               </div>
 
-            </div>
+            )}
+
+
+            {/* ==================================================
+                TARGET ACTION
+            ================================================== */}
+
+            {String(
+              selectedNode.type || ""
+            ).toUpperCase() === "PERSON" && (
+
+              <div className="mt-5 pt-4 border-t border-line flex items-center justify-between">
+
+                <div>
+
+                  <div className="text-[9px] text-slate-500 font-mono">
+                    TARGET INTELLIGENCE
+                  </div>
+
+                  <div className="mt-1 text-[10px] text-slate-600">
+                    Generate an evidence-based dossier
+                    for this PERSON entity.
+                  </div>
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={
+                    openTargetDossier
+                  }
+                  className="
+                    border
+                    border-blue-500/50
+                    bg-blue-500/5
+                    px-4
+                    py-2
+                    text-[10px]
+                    text-blue-400
+                    font-mono
+                    hover:bg-blue-500/10
+                    hover:border-blue-400
+                    transition
+                  "
+                >
+                  OPEN TARGET DOSSIER
+                </button>
+
+              </div>
+
+            )}
 
           </div>
 
@@ -364,7 +496,9 @@ export default function KnowledgeGraph() {
       )}
 
 
-      {/* GEOINT */}
+      {/* ======================================================
+          GEOINT
+      ====================================================== */}
 
       <div className="panel">
 
@@ -398,7 +532,9 @@ export default function KnowledgeGraph() {
       </div>
 
 
-      {/* ENTITY REGISTER */}
+      {/* ======================================================
+          ENTITY REGISTER
+      ====================================================== */}
 
       <div className="panel">
 
