@@ -22,6 +22,8 @@ export default function KnowledgeGraph() {
 
   const navigate = useNavigate();
 
+  
+
   const [nodes, setNodes] =
     useState([]);
 
@@ -134,30 +136,21 @@ export default function KnowledgeGraph() {
   // ============================================================
 
   const openTargetDossier = () => {
+  if (!selectedNode) return;
 
-    if (!selectedNode) {
-      return;
-    }
+  const type = String(selectedNode.type || "").toUpperCase();
 
-    if (
-      String(
-        selectedNode.type || ""
-      ).toUpperCase() !== "PERSON"
-    ) {
-      return;
-    }
+  if (type !== "PERSON") return;
 
-    if (!selectedNode.entity_key) {
-      return;
-    }
+  if (!selectedNode.entity_key) {
+    console.error("Selected PERSON has no entity_key.");
+    return;
+  }
 
-    navigate(
-      `/reports?entity=${encodeURIComponent(
-        selectedNode.entity_key
-      )}`
-    );
-
-  };
+  navigate(
+    `/reports?entity=${encodeURIComponent(selectedNode.entity_key)}`
+  );
+};
 
 
   // ============================================================
