@@ -1,919 +1,655 @@
-import {
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import {
-  getNodes,
-} from "../api/graph";
-
+import { getNodes } from "../api/graph";
 import {
   getDossierState,
   streamDossier,
 } from "../api/reports";
 
 
-function Section({
-  title,
-  children,
-}) {
-
+function Section({ title, children }) {
   return (
-
-    <div className="panel">
-
-      <div className="p-3 border-b border-line">
-
-        <div className="text-[9px] text-slate-500 font-mono">
+    <section className="border border-slate-800 bg-slate-950/60 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+        <h2 className="text-xs font-semibold tracking-[0.18em] text-slate-300">
           {title}
-        </div>
-
+        </h2>
       </div>
 
       <div className="p-4">
-
         {children}
-
       </div>
-
-    </div>
-
+    </section>
   );
-
 }
 
 
-function EntityList({
-  title,
-  items = [],
-}) {
+function EntityList({ items, emptyText = "No entities available." }) {
+  if (!items || items.length === 0) {
+    return (
+      <div className="text-xs text-slate-500">
+        {emptyText}
+      </div>
+    );
+  }
 
   return (
+    <div className="space-y-2">
+      {items.map((item, index) => (
+        <div
+          key={`${item.entity_key || item.name || "entity"}-${index}`}
+          className="border border-slate-800 rounded-md px-3 py-2 bg-slate-950"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-slate-200">
+              {item.name || "Unknown"}
+            </div>
 
-    <div>
+            {item.type && (
+              <span className="text-[10px] uppercase tracking-wider text-slate-500">
+                {item.type}
+              </span>
+            )}
+          </div>
 
-      <div className="text-[9px] text-slate-600 font-mono mb-2">
-        {title}
-      </div>
-
-
-      {items.length === 0 ? (
-
-        <div className="text-[10px] text-slate-700 font-mono">
-          NONE IDENTIFIED
-        </div>
-
-      ) : (
-
-        <div className="space-y-1">
-
-          {items.map(
-            (item, index) => (
-
-              <div
-                key={
-                  item.entity_key ||
-                  item.key ||
-                  item.id ||
-                  `${item.name}-${index}`
-                }
-                className="border border-line bg-black/20 p-2"
-              >
-
-                <div className="text-xs text-slate-300 font-mono">
-                  {item.name ||
-                    item.target_name ||
-                    "UNKNOWN"}
-                </div>
-
-                {item.type && (
-
-                  <div className="text-[8px] text-slate-600 font-mono mt-1">
-                    {item.type}
-                  </div>
-
-                )}
-
-                {item.relationship && (
-
-                  <div className="text-[8px] text-blue-400 font-mono mt-1">
-                    {item.relationship}
-                  </div>
-
-                )}
-
-              </div>
-
-            )
+          {item.relationship && (
+            <div className="text-xs text-cyan-400 mt-1">
+              {item.relationship}
+            </div>
           )}
 
+          {item.evidence && (
+            <div className="text-xs text-slate-500 mt-1">
+              {item.evidence}
+            </div>
+          )}
         </div>
-
-      )}
-
+      ))}
     </div>
-
   );
-
 }
 
 
 export default function AIReport() {
+  const [nodes, setNodes] = useState([]);
+  const [entityKey, setEntityKey] = useState("");
 
-  const [nodes, setNodes] =
-    useState([]);
+  const [report, setReport] = useState(null);
+  const [status, setStatus] = useState("IDLE");
+  const [error, setError] = useState("");
 
-  const [entityKey, setEntityKey] =
-    useState("");
+  /*
+   * IMPORTANT:
+   * Only PERSON entities are allowed to become dossier targets.
+   */
+  const personNodes = useMemo(() => {
+    return nodes
+      .filter(
+        (node) =>
+          String(node.type || "").toUpperCase() === "PERSON"
+      )
+      .sort((a, b) =>
+        String(a.name || "").localeCompare(
+          String(b.name || "")
+        )
+      );
+  }, [nodes]);
 
-  const [report, setReport] =
-    useState(null);
 
-  const [status, setStatus] =
-    useState("IDLE");
-
-  const [error, setError] =
-    useState("");
-
-  const [loadingNodes, setLoadingNodes] =
-    useState(true);
+  const selectedNode = useMemo(() => {
+    return personNodes.find(
+      (node) => node.entity_key === entityKey
+    );
+  }, [personNodes, entityKey]);
 
 
-  // ------------------------------------------------------------
-  // Load graph entities
-  // ------------------------------------------------------------
-
+  /*
+   * Load graph nodes.
+   */
   useEffect(() => {
-
     let mounted = true;
 
-
-    const loadNodes = async () => {
-
+    async function loadNodes() {
       try {
+        const response = await getNodes();
 
-        const response =
-          await getNodes();
+        if (!mounted) return;
 
-        const graphNodes =
-          response.data?.nodes || [];
+        const loadedNodes = response.data?.nodes || [];
 
+        setNodes(loadedNodes);
 
-        if (!mounted) {
-          return;
-        }
+        /*
+         * Restore saved dossier only if it belongs to a PERSON.
+         */
+        const saved = getDossierState();
 
+        const savedEntityKey = saved?.entityKey;
 
-        setNodes(
-          graphNodes
+        const savedPerson = loadedNodes.find(
+          (node) =>
+            node.entity_key === savedEntityKey &&
+            String(node.type || "").toUpperCase() === "PERSON"
         );
 
-
-        const saved =
-          getDossierState();
-
-
-        if (saved?.entityKey) {
-
-          setEntityKey(
-            saved.entityKey
+        if (savedPerson) {
+          setEntityKey(savedPerson.entity_key);
+        } else {
+          /*
+           * Default to first PERSON.
+           */
+          const firstPerson = loadedNodes.find(
+            (node) =>
+              String(node.type || "").toUpperCase() === "PERSON"
           );
 
+          if (firstPerson) {
+            setEntityKey(firstPerson.entity_key);
+          }
         }
 
-        else if (
-          graphNodes.length > 0
-        ) {
-
-          setEntityKey(
-            graphNodes[0]
-              .entity_key || ""
-          );
-
-        }
-
-
-        if (saved) {
-
-          setStatus(
-            saved.status ||
-            "IDLE"
-          );
-
-          setReport(
-            saved.report ||
-            null
-          );
-
-          setError(
-            saved.error ||
-            ""
-          );
-
-        }
-
-
-      } catch (error) {
-
-        console.error(
-          "ENTITY LOAD ERROR:",
-          error
-        );
-
+      } catch (err) {
+        console.error(err);
 
         if (mounted) {
-
-          setError(
-            error.response?.data?.detail ||
-            error.message ||
-            "Unable to load entities."
-          );
-
+          setError("Unable to load PERSON entities.");
         }
-
-      } finally {
-
-        if (mounted) {
-
-          setLoadingNodes(
-            false
-          );
-
-        }
-
       }
-
-    };
-
+    }
 
     loadNodes();
 
-
     return () => {
-
       mounted = false;
-
     };
-
   }, []);
 
 
-  // ------------------------------------------------------------
-  // Selected node
-  // ------------------------------------------------------------
+  async function generateReport() {
+    setError("");
 
-  const selectedNode =
-    useMemo(() => {
-
-      return nodes.find(
-        node =>
-          String(
-            node.entity_key
-          ) ===
-          String(
-            entityKey
-          )
-      );
-
-    }, [
-      nodes,
-      entityKey,
-    ]);
-
-
-  // ------------------------------------------------------------
-  // Generate report
-  // ------------------------------------------------------------
-
-  const generateReport = () => {
-
-    if (!entityKey) {
+    /*
+     * Safety check:
+     * Never generate a dossier for a non-PERSON entity.
+     */
+    if (!selectedNode) {
+      setError("Please select a PERSON entity.");
       return;
     }
 
+    if (
+      String(selectedNode.type || "").toUpperCase() !== "PERSON"
+    ) {
+      setError("AI dossiers are currently available only for PERSON entities.");
+      return;
+    }
 
-    setReport(null);
+    setStatus("PROCESSING");
 
-    setError("");
+    setReport({
+      target_name: selectedNode.name,
+      target_type: "PERSON",
+      summary: "",
+      network_signals: {},
+      associations: {},
+      evidence: [],
+    });
 
-    setStatus(
-      "STARTING"
-    );
+    try {
+      await streamDossier(
+        entityKey,
+        (event, data) => {
 
+          if (event === "progress") {
+            setStatus(
+              data?.phase
+                ? data.phase
+                : "PROCESSING"
+            );
 
-    streamDossier(
-
-      entityKey,
-
-      (event, data) => {
-
-        console.log(
-          "REPORT EVENT:",
-          event,
-          data
-        );
-
-
-        if (
-          event ===
-          "progress"
-        ) {
-
-          setStatus(
-            `${data.phase || "PROCESSING"} ${
-              data.percent ?? ""
-            }%`
-          );
-
-        }
+            return;
+          }
 
 
-        else if (
-          event ===
-          "chunk"
-        ) {
-
-          setReport(
-            current => ({
-
-              ...(current || {}),
-
-              target_name:
-                current?.target_name ||
-                selectedNode?.name,
-
-              target_type:
-                current?.target_type ||
-                selectedNode?.type,
-
+          if (event === "chunk") {
+            setReport((previous) => ({
+              ...(previous || {}),
               summary:
-                (
-                  current?.summary ||
-                  ""
-                ) +
-                (
-                  data.text ||
-                  ""
-                ),
+                (previous?.summary || "") +
+                (data?.text || ""),
+            }));
 
-            })
-          );
+            return;
+          }
 
+
+          if (event === "complete") {
+            setReport(data);
+            setStatus("COMPLETE");
+            return;
+          }
+
+
+          if (event === "error") {
+            setError(
+              data?.message ||
+              "Unable to generate dossier."
+            );
+
+            setStatus("ERROR");
+          }
         }
+      );
 
+    } catch (err) {
+      console.error(err);
 
-        else if (
-          event ===
-          "complete"
-        ) {
+      setError(
+        err?.message ||
+        "Unable to generate dossier."
+      );
 
-          setReport(
-            data
-          );
-
-          setStatus(
-            "COMPLETE"
-          );
-
-        }
-
-
-        else if (
-          event ===
-          "error"
-        ) {
-
-          setError(
-            data.message ||
-            "Report generation failed."
-          );
-
-          setStatus(
-            "FAILED"
-          );
-
-        }
-
-      }
-
-    );
-
-  };
-
-
-  const associations =
-    report?.associations || {};
-
-
-  const network =
-    report?.network_signals || {};
+      setStatus("ERROR");
+    }
+  }
 
 
   return (
-
-    <div className="space-y-4">
+    <div className="min-h-full bg-slate-950 text-slate-200 p-6">
 
       {/* HEADER */}
+      <div className="mb-6">
 
-      <div>
+        <div className="flex items-center justify-between">
 
-        <div className="eyebrow">
-          AI ANALYSIS
-        </div>
+          <div>
+            <div className="text-xs tracking-[0.25em] text-cyan-500 mb-1">
+              VIGILANT / AI INTELLIGENCE
+            </div>
 
-        <h1 className="text-xl text-white font-mono">
-          INTELLIGENCE DOSSIER
-        </h1>
+            <h1 className="text-2xl font-semibold text-white">
+              AI Target Dossier
+            </h1>
 
-        <div className="text-xs text-slate-500 mt-1">
-          Evidence-based AI analysis of graph entities.
+            <p className="text-sm text-slate-500 mt-1">
+              Evidence-based analytical assessment for PERSON entities.
+            </p>
+          </div>
+
         </div>
 
       </div>
 
 
-      {/* TARGET SELECTOR */}
+      {/* TARGET SELECTION */}
+      <Section title="TARGET PERSON">
 
-      <div className="panel p-4">
+        <div className="flex flex-col lg:flex-row gap-4">
 
-        <div className="text-[9px] text-slate-500 font-mono mb-2">
-          TARGET ENTITY
-        </div>
+          <div className="flex-1">
 
+            <label className="block text-[10px] tracking-[0.2em] text-slate-500 mb-2">
+              PERSON ENTITY
+            </label>
 
-        <div className="flex gap-2">
+            <select
+              value={entityKey}
+              onChange={(e) => {
+                setEntityKey(e.target.value);
+                setReport(null);
+                setStatus("IDLE");
+                setError("");
+              }}
+              className="
+                w-full
+                bg-slate-900
+                border border-slate-700
+                rounded-md
+                px-3
+                py-3
+                text-sm
+                text-slate-200
+                outline-none
+                focus:border-cyan-500
+              "
+            >
 
-          <select
-
-            className="input-tactical flex-1"
-
-            value={
-              entityKey
-            }
-
-            onChange={event => {
-
-              setEntityKey(
-                event.target.value
-              );
-
-              setReport(
-                null
-              );
-
-              setError(
-                ""
-              );
-
-              setStatus(
-                "IDLE"
-              );
-
-            }}
-
-            disabled={
-              loadingNodes
-            }
-
-          >
-
-            {loadingNodes && (
-
-              <option value="">
-                LOADING ENTITIES...
-              </option>
-
-            )}
-
-
-            {!loadingNodes &&
-              nodes.length === 0 && (
-
+              {personNodes.length === 0 ? (
                 <option value="">
-                  NO ENTITIES AVAILABLE
+                  No PERSON entities found
                 </option>
-
+              ) : (
+                personNodes.map((node) => (
+                  <option
+                    key={node.entity_key}
+                    value={node.entity_key}
+                  >
+                    {node.name} — PERSON
+                  </option>
+                ))
               )}
 
-
-            {nodes.map(node => (
-
-              <option
-
-                key={
-                  node.entity_key ||
-                  node.id
-                }
-
-                value={
-                  node.entity_key
-                }
-
-              >
-
-                {node.name}
-                {" — "}
-                {node.type}
-
-              </option>
-
-            ))}
-
-          </select>
-
-
-          <button
-
-            className="btn-primary"
-
-            onClick={
-              generateReport
-            }
-
-            disabled={
-              !entityKey ||
-              status.includes(
-                "PROCESSING"
-              ) ||
-              status.includes(
-                "ASSESSMENT"
-              )
-            }
-
-          >
-
-            GENERATE DOSSIER
-
-          </button>
-
-        </div>
-
-
-        {selectedNode && (
-
-          <div className="mt-3 text-[9px] text-slate-500 font-mono">
-
-            ENTITY KEY:
-            {" "}
-            {selectedNode.entity_key}
-
-            {" | "}
-
-            TYPE:
-            {" "}
-            {selectedNode.type}
-
-            {" | "}
-
-            NETWORK DEGREE:
-            {" "}
-            {selectedNode.degree ?? 0}
+            </select>
 
           </div>
 
-        )}
 
-      </div>
+          <div className="flex items-end">
+
+            <button
+              onClick={generateReport}
+              disabled={
+                !selectedNode ||
+                status === "PROCESSING" ||
+                status === "GRAPH CONTEXT" ||
+                status === "AI ASSESSMENT"
+              }
+              className="
+                px-6
+                py-3
+                rounded-md
+                bg-cyan-600
+                hover:bg-cyan-500
+                disabled:bg-slate-800
+                disabled:text-slate-600
+                text-white
+                text-sm
+                font-semibold
+                transition
+              "
+            >
+              {status === "PROCESSING" ||
+              status === "GRAPH CONTEXT" ||
+              status === "AI ASSESSMENT"
+                ? "GENERATING..."
+                : "GENERATE DOSSIER"}
+            </button>
+
+          </div>
+
+        </div>
+
+
+        {/* PERSON COUNT */}
+        <div className="mt-3 text-xs text-slate-500">
+          {personNodes.length} PERSON{" "}
+          {personNodes.length === 1 ? "entity" : "entities"} available
+        </div>
+
+      </Section>
 
 
       {/* ERROR */}
-
       {error && (
+        <div className="mt-4 border border-red-900 bg-red-950/30 rounded-md p-4">
+          <div className="text-xs tracking-wider text-red-400">
+            ERROR
+          </div>
 
-        <div className="border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400 font-mono">
+          <div className="text-sm text-red-300 mt-1">
+            {error}
+          </div>
+        </div>
+      )}
 
-          REPORT ERROR:
-          {" "}
-          {error}
+
+      {/* EMPTY STATE */}
+      {!report && personNodes.length === 0 && !error && (
+        <div className="mt-6 border border-slate-800 rounded-lg p-8 text-center">
+
+          <div className="text-sm text-slate-400">
+            No PERSON entities are currently available.
+          </div>
+
+          <div className="text-xs text-slate-600 mt-2">
+            Upload and process documents containing person entities
+            before generating a dossier.
+          </div>
+
+        </div>
+      )}
+
+
+      {/* SELECTED PERSON */}
+      {selectedNode && !report && (
+        <div className="mt-6">
+
+          <Section title="SELECTED PERSON">
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  NAME
+                </div>
+
+                <div className="text-lg text-white mt-1">
+                  {selectedNode.name}
+                </div>
+              </div>
+
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  TYPE
+                </div>
+
+                <div className="text-sm text-cyan-400 mt-1">
+                  PERSON
+                </div>
+              </div>
+
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  ENTITY KEY
+                </div>
+
+                <div className="text-xs text-slate-400 mt-1 break-all">
+                  {selectedNode.entity_key}
+                </div>
+              </div>
+
+            </div>
+
+          </Section>
+
+        </div>
+      )}
+
+
+      {/* REPORT */}
+      {report && (
+
+        <div className="mt-6 space-y-6">
+
+          {/* TARGET PROFILE */}
+          <Section title="TARGET PROFILE">
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  TARGET
+                </div>
+
+                <div className="text-lg text-white mt-1">
+                  {report.target_name}
+                </div>
+              </div>
+
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  TYPE
+                </div>
+
+                <div className="text-sm text-cyan-400 mt-1">
+                  PERSON
+                </div>
+              </div>
+
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  NETWORK SCORE
+                </div>
+
+                <div className="text-lg text-white mt-1">
+                  {report.network_score ??
+                    report.threat_score ??
+                    0}
+                </div>
+              </div>
+
+
+              <div>
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  STATUS
+                </div>
+
+                <div className="text-sm text-emerald-400 mt-1">
+                  {status}
+                </div>
+              </div>
+
+            </div>
+
+          </Section>
+
+
+          {/* NETWORK ANALYSIS */}
+          <Section title="NETWORK ANALYSIS">
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              <div className="border border-slate-800 rounded-md p-4">
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  DEGREE CENTRALITY
+                </div>
+
+                <div className="text-2xl text-white mt-2">
+                  {report.network_signals
+                    ?.degree_centrality ?? 0}
+                </div>
+              </div>
+
+
+              <div className="border border-slate-800 rounded-md p-4">
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  BETWEENNESS CENTRALITY
+                </div>
+
+                <div className="text-2xl text-white mt-2">
+                  {report.network_signals
+                    ?.betweenness_centrality ?? 0}
+                </div>
+              </div>
+
+
+              <div className="border border-slate-800 rounded-md p-4">
+                <div className="text-[10px] tracking-wider text-slate-500">
+                  CONNECTED ENTITIES
+                </div>
+
+                <div className="text-2xl text-white mt-2">
+                  {report.network_signals
+                    ?.connected_entities ??
+                    report.neighbors?.length ??
+                    0}
+                </div>
+              </div>
+
+            </div>
+
+          </Section>
+
+
+          {/* PEOPLE */}
+          <Section title="PERSON ASSOCIATIONS">
+
+            <EntityList
+              items={report.associations?.people}
+              emptyText="No connected PERSON entities."
+            />
+
+          </Section>
+
+
+          {/* ORGANIZATIONS */}
+          <Section title="ORGANIZATION ASSOCIATIONS">
+
+            <EntityList
+              items={report.associations?.organizations}
+              emptyText="No connected organizations."
+            />
+
+          </Section>
+
+
+          {/* LOCATIONS */}
+          <Section title="LOCATION ASSOCIATIONS">
+
+            <EntityList
+              items={report.associations?.locations}
+              emptyText="No connected locations."
+            />
+
+          </Section>
+
+
+          {/* IDENTIFIERS */}
+          <Section title="IDENTIFIERS">
+
+            <EntityList
+              items={report.associations?.identifiers}
+              emptyText="No identifiers available."
+            />
+
+          </Section>
+
+
+          {/* EVIDENCE */}
+          <Section title="SOURCE EVIDENCE">
+
+            <EntityList
+              items={report.evidence}
+              emptyText="No evidence records available."
+            />
+
+          </Section>
+
+
+          {/* AI ASSESSMENT */}
+          <Section title="AI ASSESSMENT">
+
+            <div className="whitespace-pre-wrap text-sm leading-7 text-slate-300">
+              {report.summary ||
+                "No AI assessment was generated."}
+            </div>
+
+          </Section>
+
+
+          {/* LIMITATION NOTICE */}
+          <div className="border border-amber-900/60 bg-amber-950/20 rounded-lg p-4">
+
+            <div className="text-xs tracking-wider text-amber-500">
+              ANALYTIC NOTICE
+            </div>
+
+            <div className="text-xs text-amber-300/80 mt-2 leading-6">
+              Network connectivity and centrality are analytical
+              signals only. They do not by themselves establish
+              wrongdoing, intent, or criminal activity.
+            </div>
+
+          </div>
 
         </div>
 
       )}
-
-
-      {/* STATUS */}
-
-      <div className="panel p-3 flex justify-between">
-
-        <div className="label">
-
-          STATUS:
-          {" "}
-          {status}
-
-        </div>
-
-
-        {report && (
-
-          <div className="font-mono text-[9px] text-green-500">
-
-            EVIDENCE-BASED ANALYSIS
-
-          </div>
-
-        )}
-
-      </div>
-
-
-      {/* TARGET PROFILE */}
-
-      {report && (
-
-        <Section title="TARGET PROFILE">
-
-          <div className="grid grid-cols-4 gap-4">
-
-            <div>
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                NAME
-              </div>
-
-              <div className="text-sm text-white font-mono mt-1">
-                {report.target_name}
-              </div>
-
-            </div>
-
-
-            <div>
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                TYPE
-              </div>
-
-              <div className="text-sm text-blue-400 font-mono mt-1">
-                {report.target_type}
-              </div>
-
-            </div>
-
-
-            <div>
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                NETWORK SCORE
-              </div>
-
-              <div className="text-2xl text-amber-400 font-mono mt-1">
-                {report.network_score ??
-                  report.threat_score ??
-                  "—"}
-                <span className="text-xs text-slate-600">
-                  /100
-                </span>
-              </div>
-
-            </div>
-
-
-            <div>
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                CONNECTIONS
-              </div>
-
-              <div className="text-2xl text-white font-mono mt-1">
-                {network.connected_entities ??
-                  report.neighbors?.length ??
-                  0}
-              </div>
-
-            </div>
-
-          </div>
-
-        </Section>
-
-      )}
-
-
-      {/* ASSOCIATIONS */}
-
-      {report && (
-
-        <Section title="KNOWN ASSOCIATIONS">
-
-          <div className="grid grid-cols-2 gap-5">
-
-            <EntityList
-              title="PEOPLE"
-              items={
-                associations.people
-              }
-            />
-
-
-            <EntityList
-              title="ORGANIZATIONS"
-              items={
-                associations.organizations
-              }
-            />
-
-
-            <EntityList
-              title="LOCATIONS"
-              items={
-                associations.locations
-              }
-            />
-
-
-            <EntityList
-              title="IDENTIFIERS"
-              items={
-                associations.identifiers
-              }
-            />
-
-          </div>
-
-        </Section>
-
-      )}
-
-
-      {/* NETWORK */}
-
-      {report && (
-
-        <Section title="NETWORK ANALYSIS">
-
-          <div className="grid grid-cols-3 gap-3">
-
-            <div className="border border-line p-3">
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                DEGREE CENTRALITY
-              </div>
-
-              <div className="text-xl text-blue-400 font-mono mt-2">
-                {
-                  network.degree_centrality ??
-                  "—"
-                }
-              </div>
-
-            </div>
-
-
-            <div className="border border-line p-3">
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                BETWEENNESS
-              </div>
-
-              <div className="text-xl text-purple-400 font-mono mt-2">
-                {
-                  network.betweenness_centrality ??
-                  "—"
-                }
-              </div>
-
-            </div>
-
-
-            <div className="border border-line p-3">
-
-              <div className="text-[8px] text-slate-600 font-mono">
-                CONNECTED ENTITIES
-              </div>
-
-              <div className="text-xl text-green-400 font-mono mt-2">
-                {
-                  network.connected_entities ??
-                  report.neighbors?.length ??
-                  0
-                }
-              </div>
-
-            </div>
-
-          </div>
-
-        </Section>
-
-      )}
-
-
-      {/* SOURCE EVIDENCE */}
-
-      {report && (
-
-        <Section title="SOURCE EVIDENCE">
-
-          {report.evidence?.length ? (
-
-            <div className="space-y-2">
-
-              {report.evidence.map(
-                (item, index) => (
-
-                  <div
-                    key={index}
-                    className="border border-line bg-black/20 p-3"
-                  >
-
-                    <div className="text-[9px] text-blue-400 font-mono mb-2">
-
-                      EVIDENCE {String(
-                        index + 1
-                      ).padStart(2, "0")}
-
-                    </div>
-
-                    <pre className="whitespace-pre-wrap text-[10px] text-slate-400 leading-relaxed">
-
-                      {typeof item === "string"
-                        ? item
-                        : JSON.stringify(
-                            item,
-                            null,
-                            2
-                          )}
-
-                    </pre>
-
-                  </div>
-
-                )
-              )}
-
-            </div>
-
-          ) : (
-
-            <div className="text-xs text-slate-600 font-mono">
-              NO EXPLICIT EVIDENCE AVAILABLE
-            </div>
-
-          )}
-
-        </Section>
-
-      )}
-
-
-      {/* AI ASSESSMENT */}
-
-      {report && (
-
-        <Section title="AI ASSESSMENT">
-
-          <pre className="whitespace-pre-wrap text-xs text-slate-300 leading-relaxed">
-
-            {report.summary ||
-              "Generating assessment..."}
-
-          </pre>
-
-        </Section>
-
-      )}
-
-
-      {/* PROCESSING */}
-
-      {!report &&
-        status !== "IDLE" &&
-        status !== "FAILED" && (
-
-          <div className="panel p-10 text-center">
-
-            <div className="text-xs text-slate-500 font-mono">
-              DOSSIER PROCESSING...
-            </div>
-
-            <div className="text-[9px] text-slate-700 font-mono mt-2">
-              GRAPH CONTEXT → AI ASSESSMENT → DOSSIER
-            </div>
-
-          </div>
-
-        )}
-
-
-      {/* EMPTY */}
-
-      {!report &&
-        status === "IDLE" && (
-
-          <div className="panel p-10 text-center">
-
-            <div className="text-xs text-slate-600 font-mono">
-              SELECT AN ENTITY TO GENERATE A DOSSIER
-            </div>
-
-          </div>
-
-        )}
 
     </div>
-
   );
-
 }

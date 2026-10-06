@@ -656,6 +656,10 @@ class GraphService:
     # TARGET CONTEXT FOR AI REPORT
     # ============================================================
 
+        # ============================================================
+    # TARGET CONTEXT FOR AI REPORT
+    # ============================================================
+
     @staticmethod
     async def get_target_context(
         entity_key
@@ -675,12 +679,19 @@ class GraphService:
                 n.key AS entity_key,
                 n.name AS target_name,
                 n.type AS target_type,
+                n.confidence AS target_confidence,
+
+                n.aliases_json AS aliases_json,
+                n.identifiers_json AS identifiers_json,
+                n.locations_json AS locations_json,
+                n.temporal_json AS temporal_json,
 
                 collect({
                     name: m.name,
                     type: m.type,
+                    entity_key: m.key,
+                    confidence: m.confidence,
                     relationship: r.type,
-                    confidence: r.confidence,
                     evidence: r.evidence,
                     document_id: r.document_id
                 }) AS neighbors
@@ -696,27 +707,142 @@ class GraphService:
             records[0]
         )
 
-        context["neighbors"] = [
-            neighbor
-            for neighbor in context.get(
-                "neighbors",
-                []
+        # --------------------------------------------------------
+        # Parse JSON properties stored on target
+        # --------------------------------------------------------
+
+        def parse_json_array(value):
+
+            if value is None:
+                return []
+
+            if isinstance(
+                value,
+                list
+            ):
+                return value
+
+            if isinstance(
+                value,
+                str
+            ):
+                try:
+
+                    parsed = json.loads(
+                        value
+                    )
+
+                    if isinstance(
+                        parsed,
+                        list
+                    ):
+                        return parsed
+
+                except (
+                    TypeError,
+                    json.JSONDecodeError,
+                ):
+                    pass
+
+            return []
+
+        context["aliases"] = parse_json_array(
+            context.get(
+                "aliases_json"
             )
-            if neighbor.get(
+        )
+
+        context["identifiers"] = parse_json_array(
+            context.get(
+                "identifiers_json"
+            )
+        )
+
+        context["locations"] = parse_json_array(
+            context.get(
+                "locations_json"
+            )
+        )
+
+        context["temporal"] = parse_json_array(
+            context.get(
+                "temporal_json"
+            )
+        )
+
+        # --------------------------------------------------------
+        # Clean neighbors
+        # --------------------------------------------------------
+
+        cleaned_neighbors = []
+
+        for neighbor in context.get(
+            "neighbors",
+            []
+        ):
+
+            if not isinstance(
+                neighbor,
+                dict
+            ):
+                continue
+
+            name = neighbor.get(
                 "name"
             )
-        ]
+
+            if not name:
+                continue
+
+            cleaned_neighbors.append(
+                {
+                    "name": name,
+
+                    "type": str(
+                        neighbor.get(
+                            "type",
+                            "OTHER"
+                        )
+                    ).upper(),
+
+                    "entity_key": neighbor.get(
+                        "entity_key"
+                    ),
+
+                    "relationship": neighbor.get(
+                        "relationship"
+                    ),
+
+                    "confidence": neighbor.get(
+                        "confidence"
+                    ),
+
+                    "evidence": neighbor.get(
+                        "evidence"
+                    ),
+
+                    "document_id": neighbor.get(
+                        "document_id"
+                    ),
+                }
+            )
+
+        context["neighbors"] = cleaned_neighbors
+
+        # --------------------------------------------------------
+        # Network metrics
+        # --------------------------------------------------------
 
         context[
             "degree_centrality"
         ] = min(
             len(
-                context["neighbors"]
+                cleaned_neighbors
             ) / 20,
             1,
         )
 
-        # Placeholder until real graph
+        # Placeholder until actual graph-wide
         # betweenness calculation is implemented.
         context[
             "betweenness_centrality"
