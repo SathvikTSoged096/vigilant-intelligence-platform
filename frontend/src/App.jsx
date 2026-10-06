@@ -1,10 +1,10 @@
 import {
-    BrowserRouter,
-    Navigate,
-    Outlet,
-    Route,
-    Routes,
-    useLocation,
+  BrowserRouter,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
 } from "react-router-dom";
 
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -61,11 +61,13 @@ export default function App() {
         <BrowserRouter>
           <Routes>
 
+            {/* LOGIN */}
             <Route
               path="/login"
               element={<Login />}
             />
 
+            {/* PROTECTED APPLICATION */}
             <Route element={<Guard />}>
 
               <Route
@@ -95,9 +97,10 @@ export default function App() {
 
             </Route>
 
+            {/* DEFAULT APPLICATION PAGE */}
             <Route
               path="*"
-              element={<Navigate to="/dashboard" />}
+              element={<Navigate to="/graph" replace />}
             />
 
           </Routes>
