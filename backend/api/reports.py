@@ -13,6 +13,7 @@ router = APIRouter(
 
 
 def sse(event, data):
+
     return (
         f"event: {event}\n"
         f"data: {json.dumps(data, default=str)}\n\n"
@@ -21,14 +22,14 @@ def sse(event, data):
 
 @router.post("/generate")
 async def generate(
-    p: dict,
-    u=Depends(current_user),
+    payload: dict,
+    user=Depends(current_user),
 ):
 
     entity_key = str(
-        p.get(
+        payload.get(
             "entity_key",
-            "",
+            ""
         )
     ).strip()
 
@@ -41,13 +42,14 @@ async def generate(
                 "error",
                 {
                     "message":
-                    "entity_key is required."
-                },
+                        "entity_key is required."
+                }
             )
+
 
         return StreamingResponse(
             invalid_stream(),
-            media_type="text/event-stream",
+            media_type="text/event-stream"
         )
 
 
@@ -55,24 +57,27 @@ async def generate(
 
         try:
 
-            async for x in (
-                ReportService.stream_target_dossier(
+            async for event in (
+                ReportService
+                .stream_target_dossier(
                     entity_key
                 )
             ):
 
                 yield sse(
-                    x["event"],
-                    x["data"],
+                    event["event"],
+                    event["data"]
                 )
 
-        except Exception as e:
+
+        except Exception as exc:
 
             yield sse(
                 "error",
                 {
-                    "message": str(e)
-                },
+                    "message":
+                        str(exc)
+                }
             )
 
 
@@ -80,11 +85,20 @@ async def generate(
 
         stream(),
 
-        media_type="text/event-stream",
+        media_type=
+            "text/event-stream",
 
         headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-            "Connection": "keep-alive",
+
+            "Cache-Control":
+                "no-cache",
+
+            "X-Accel-Buffering":
+                "no",
+
+            "Connection":
+                "keep-alive",
+
         },
+
     )

@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
 import {
   getNodes,
@@ -10,49 +14,205 @@ import {
 } from "../api/reports";
 
 
+function Section({
+  title,
+  children,
+}) {
+
+  return (
+
+    <div className="panel">
+
+      <div className="p-3 border-b border-line">
+
+        <div className="text-[9px] text-slate-500 font-mono">
+          {title}
+        </div>
+
+      </div>
+
+      <div className="p-4">
+
+        {children}
+
+      </div>
+
+    </div>
+
+  );
+
+}
+
+
+function EntityList({
+  title,
+  items = [],
+}) {
+
+  return (
+
+    <div>
+
+      <div className="text-[9px] text-slate-600 font-mono mb-2">
+        {title}
+      </div>
+
+
+      {items.length === 0 ? (
+
+        <div className="text-[10px] text-slate-700 font-mono">
+          NONE IDENTIFIED
+        </div>
+
+      ) : (
+
+        <div className="space-y-1">
+
+          {items.map(
+            (item, index) => (
+
+              <div
+                key={
+                  item.entity_key ||
+                  item.key ||
+                  item.id ||
+                  `${item.name}-${index}`
+                }
+                className="border border-line bg-black/20 p-2"
+              >
+
+                <div className="text-xs text-slate-300 font-mono">
+                  {item.name ||
+                    item.target_name ||
+                    "UNKNOWN"}
+                </div>
+
+                {item.type && (
+
+                  <div className="text-[8px] text-slate-600 font-mono mt-1">
+                    {item.type}
+                  </div>
+
+                )}
+
+                {item.relationship && (
+
+                  <div className="text-[8px] text-blue-400 font-mono mt-1">
+                    {item.relationship}
+                  </div>
+
+                )}
+
+              </div>
+
+            )
+          )}
+
+        </div>
+
+      )}
+
+    </div>
+
+  );
+
+}
+
+
 export default function AIReport() {
 
-  const [nodes, setNodes] = useState([]);
+  const [nodes, setNodes] =
+    useState([]);
 
-  const [entityKey, setEntityKey] = useState("");
+  const [entityKey, setEntityKey] =
+    useState("");
 
-  const [report, setReport] = useState(null);
+  const [report, setReport] =
+    useState(null);
 
-  const [status, setStatus] = useState("IDLE");
+  const [status, setStatus] =
+    useState("IDLE");
 
-  const [error, setError] = useState("");
+  const [error, setError] =
+    useState("");
 
-  const [loadingNodes, setLoadingNodes] = useState(true);
+  const [loadingNodes, setLoadingNodes] =
+    useState(true);
 
+
+  // ------------------------------------------------------------
+  // Load graph entities
+  // ------------------------------------------------------------
 
   useEffect(() => {
 
     let mounted = true;
 
+
     const loadNodes = async () => {
 
       try {
 
-        const response = await getNodes();
+        const response =
+          await getNodes();
 
         const graphNodes =
           response.data?.nodes || [];
+
 
         if (!mounted) {
           return;
         }
 
-        setNodes(graphNodes);
 
-        if (graphNodes.length > 0) {
+        setNodes(
+          graphNodes
+        );
 
-          const firstKey =
-            graphNodes[0].entity_key;
+
+        const saved =
+          getDossierState();
+
+
+        if (saved?.entityKey) {
 
           setEntityKey(
-            firstKey || ""
+            saved.entityKey
           );
+
         }
+
+        else if (
+          graphNodes.length > 0
+        ) {
+
+          setEntityKey(
+            graphNodes[0]
+              .entity_key || ""
+          );
+
+        }
+
+
+        if (saved) {
+
+          setStatus(
+            saved.status ||
+            "IDLE"
+          );
+
+          setReport(
+            saved.report ||
+            null
+          );
+
+          setError(
+            saved.error ||
+            ""
+          );
+
+        }
+
 
       } catch (error) {
 
@@ -60,6 +220,7 @@ export default function AIReport() {
           "ENTITY LOAD ERROR:",
           error
         );
+
 
         if (mounted) {
 
@@ -74,7 +235,11 @@ export default function AIReport() {
       } finally {
 
         if (mounted) {
-          setLoadingNodes(false);
+
+          setLoadingNodes(
+            false
+          );
+
         }
 
       }
@@ -85,46 +250,48 @@ export default function AIReport() {
     loadNodes();
 
 
-    // ------------------------------------------------------------
-    // Restore an already-running/completed dossier.
-    // ------------------------------------------------------------
-
-    const saved =
-      getDossierState();
-
-    if (saved) {
-
-      setEntityKey(
-        saved.entityKey || ""
-      );
-
-      setStatus(
-        saved.status || "IDLE"
-      );
-
-      setReport(
-        saved.report || null
-      );
-
-      setError(
-        saved.error || ""
-      );
-
-    }
-
-
     return () => {
+
       mounted = false;
+
     };
 
   }, []);
 
+
+  // ------------------------------------------------------------
+  // Selected node
+  // ------------------------------------------------------------
+
+  const selectedNode =
+    useMemo(() => {
+
+      return nodes.find(
+        node =>
+          String(
+            node.entity_key
+          ) ===
+          String(
+            entityKey
+          )
+      );
+
+    }, [
+      nodes,
+      entityKey,
+    ]);
+
+
+  // ------------------------------------------------------------
+  // Generate report
+  // ------------------------------------------------------------
 
   const generateReport = () => {
 
     if (!entityKey) {
       return;
     }
+
 
     setReport(null);
 
@@ -136,6 +303,7 @@ export default function AIReport() {
 
 
     streamDossier(
+
       entityKey,
 
       (event, data) => {
@@ -147,7 +315,10 @@ export default function AIReport() {
         );
 
 
-        if (event === "progress") {
+        if (
+          event ===
+          "progress"
+        ) {
 
           setStatus(
             `${data.phase || "PROCESSING"} ${
@@ -158,32 +329,48 @@ export default function AIReport() {
         }
 
 
-        else if (event === "chunk") {
+        else if (
+          event ===
+          "chunk"
+        ) {
 
-          setReport((current) => ({
+          setReport(
+            current => ({
 
-            ...(current || {}),
+              ...(current || {}),
 
-            target_name:
-              current?.target_name ||
-              selectedNode?.name,
+              target_name:
+                current?.target_name ||
+                selectedNode?.name,
 
-            target_type:
-              current?.target_type ||
-              selectedNode?.type,
+              target_type:
+                current?.target_type ||
+                selectedNode?.type,
 
-            summary:
-              (current?.summary || "") +
-              (data.text || ""),
+              summary:
+                (
+                  current?.summary ||
+                  ""
+                ) +
+                (
+                  data.text ||
+                  ""
+                ),
 
-          }));
+            })
+          );
 
         }
 
 
-        else if (event === "complete") {
+        else if (
+          event ===
+          "complete"
+        ) {
 
-          setReport(data);
+          setReport(
+            data
+          );
 
           setStatus(
             "COMPLETE"
@@ -192,7 +379,10 @@ export default function AIReport() {
         }
 
 
-        else if (event === "error") {
+        else if (
+          event ===
+          "error"
+        ) {
 
           setError(
             data.message ||
@@ -206,22 +396,25 @@ export default function AIReport() {
         }
 
       }
+
     );
 
   };
 
 
-  const selectedNode =
-    nodes.find(
-      (node) =>
-        String(node.entity_key) ===
-        String(entityKey)
-    );
+  const associations =
+    report?.associations || {};
+
+
+  const network =
+    report?.network_signals || {};
 
 
   return (
 
     <div className="space-y-4">
+
+      {/* HEADER */}
 
       <div>
 
@@ -240,6 +433,8 @@ export default function AIReport() {
       </div>
 
 
+      {/* TARGET SELECTOR */}
+
       <div className="panel p-4">
 
         <div className="text-[9px] text-slate-500 font-mono mb-2">
@@ -250,49 +445,77 @@ export default function AIReport() {
         <div className="flex gap-2">
 
           <select
+
             className="input-tactical flex-1"
-            value={entityKey}
-            onChange={(event) => {
+
+            value={
+              entityKey
+            }
+
+            onChange={event => {
 
               setEntityKey(
                 event.target.value
               );
 
-              setReport(null);
-              setError("");
-              setStatus("IDLE");
+              setReport(
+                null
+              );
+
+              setError(
+                ""
+              );
+
+              setStatus(
+                "IDLE"
+              );
 
             }}
-            disabled={loadingNodes}
+
+            disabled={
+              loadingNodes
+            }
+
           >
 
             {loadingNodes && (
+
               <option value="">
                 LOADING ENTITIES...
               </option>
+
             )}
 
 
             {!loadingNodes &&
               nodes.length === 0 && (
+
                 <option value="">
                   NO ENTITIES AVAILABLE
                 </option>
+
               )}
 
 
-            {nodes.map((node) => (
+            {nodes.map(node => (
 
               <option
+
                 key={
                   node.entity_key ||
                   node.id
                 }
+
                 value={
                   node.entity_key
                 }
+
               >
-                {node.name} — {node.type}
+
+                {node.name}
+                {" — "}
+                {node.type}
+
               </option>
 
             ))}
@@ -301,11 +524,27 @@ export default function AIReport() {
 
 
           <button
+
             className="btn-primary"
-            onClick={generateReport}
-            disabled={!entityKey}
+
+            onClick={
+              generateReport
+            }
+
+            disabled={
+              !entityKey ||
+              status.includes(
+                "PROCESSING"
+              ) ||
+              status.includes(
+                "ASSESSMENT"
+              )
+            }
+
           >
+
             GENERATE DOSSIER
+
           </button>
 
         </div>
@@ -315,15 +554,21 @@ export default function AIReport() {
 
           <div className="mt-3 text-[9px] text-slate-500 font-mono">
 
-            ENTITY KEY: {selectedNode.entity_key}
+            ENTITY KEY:
+            {" "}
+            {selectedNode.entity_key}
 
             {" | "}
 
-            TYPE: {selectedNode.type}
+            TYPE:
+            {" "}
+            {selectedNode.type}
 
             {" | "}
 
-            NETWORK DEGREE: {selectedNode.degree}
+            NETWORK DEGREE:
+            {" "}
+            {selectedNode.degree ?? 0}
 
           </div>
 
@@ -332,121 +577,343 @@ export default function AIReport() {
       </div>
 
 
+      {/* ERROR */}
+
       {error && (
 
         <div className="border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400 font-mono">
 
-          REPORT ERROR: {error}
+          REPORT ERROR:
+          {" "}
+          {error}
 
         </div>
 
       )}
 
 
-      <div className="panel p-4">
+      {/* STATUS */}
 
-        <div className="flex justify-between">
+      <div className="panel p-3 flex justify-between">
 
-          <div className="label">
-            STATUS: {status}
-          </div>
+        <div className="label">
 
-
-          {report && (
-
-            <div className="font-mono text-[9px] text-slate-500">
-              EVIDENCE-BASED ANALYSIS
-            </div>
-
-          )}
+          STATUS:
+          {" "}
+          {status}
 
         </div>
 
 
         {report && (
 
-          <>
+          <div className="font-mono text-[9px] text-green-500">
 
-            <div className="mt-4">
+            EVIDENCE-BASED ANALYSIS
 
-              <div className="text-[9px] text-slate-500 font-mono">
-                TARGET
+          </div>
+
+        )}
+
+      </div>
+
+
+      {/* TARGET PROFILE */}
+
+      {report && (
+
+        <Section title="TARGET PROFILE">
+
+          <div className="grid grid-cols-4 gap-4">
+
+            <div>
+
+              <div className="text-[8px] text-slate-600 font-mono">
+                NAME
               </div>
 
-              <div className="text-white text-lg font-mono">
-
-                {report.target_name ||
-                  selectedNode?.name ||
-                  "UNKNOWN"}
-
+              <div className="text-sm text-white font-mono mt-1">
+                {report.target_name}
               </div>
 
             </div>
 
 
-            <div className="mt-4">
+            <div>
 
-              <div className="text-[9px] text-slate-500 font-mono">
+              <div className="text-[8px] text-slate-600 font-mono">
+                TYPE
+              </div>
+
+              <div className="text-sm text-blue-400 font-mono mt-1">
+                {report.target_type}
+              </div>
+
+            </div>
+
+
+            <div>
+
+              <div className="text-[8px] text-slate-600 font-mono">
                 NETWORK SCORE
               </div>
 
-              <div className="text-3xl text-amber-400 font-mono">
-
-                {report.threat_score ?? "—"}
-                /100
-
+              <div className="text-2xl text-amber-400 font-mono mt-1">
+                {report.network_score ??
+                  report.threat_score ??
+                  "—"}
+                <span className="text-xs text-slate-600">
+                  /100
+                </span>
               </div>
 
             </div>
 
 
-            <div className="mt-5 border-t border-line pt-4">
+            <div>
 
-              <div className="text-[9px] text-slate-500 font-mono mb-2">
-                AI ASSESSMENT
+              <div className="text-[8px] text-slate-600 font-mono">
+                CONNECTIONS
               </div>
 
-              <pre className="whitespace-pre-wrap text-xs text-slate-300 leading-relaxed">
-
-                {report.summary ||
-                  "Generating assessment..."}
-
-              </pre>
+              <div className="text-2xl text-white font-mono mt-1">
+                {network.connected_entities ??
+                  report.neighbors?.length ??
+                  0}
+              </div>
 
             </div>
 
-          </>
+          </div>
+
+        </Section>
+
+      )}
+
+
+      {/* ASSOCIATIONS */}
+
+      {report && (
+
+        <Section title="KNOWN ASSOCIATIONS">
+
+          <div className="grid grid-cols-2 gap-5">
+
+            <EntityList
+              title="PEOPLE"
+              items={
+                associations.people
+              }
+            />
+
+
+            <EntityList
+              title="ORGANIZATIONS"
+              items={
+                associations.organizations
+              }
+            />
+
+
+            <EntityList
+              title="LOCATIONS"
+              items={
+                associations.locations
+              }
+            />
+
+
+            <EntityList
+              title="IDENTIFIERS"
+              items={
+                associations.identifiers
+              }
+            />
+
+          </div>
+
+        </Section>
+
+      )}
+
+
+      {/* NETWORK */}
+
+      {report && (
+
+        <Section title="NETWORK ANALYSIS">
+
+          <div className="grid grid-cols-3 gap-3">
+
+            <div className="border border-line p-3">
+
+              <div className="text-[8px] text-slate-600 font-mono">
+                DEGREE CENTRALITY
+              </div>
+
+              <div className="text-xl text-blue-400 font-mono mt-2">
+                {
+                  network.degree_centrality ??
+                  "—"
+                }
+              </div>
+
+            </div>
+
+
+            <div className="border border-line p-3">
+
+              <div className="text-[8px] text-slate-600 font-mono">
+                BETWEENNESS
+              </div>
+
+              <div className="text-xl text-purple-400 font-mono mt-2">
+                {
+                  network.betweenness_centrality ??
+                  "—"
+                }
+              </div>
+
+            </div>
+
+
+            <div className="border border-line p-3">
+
+              <div className="text-[8px] text-slate-600 font-mono">
+                CONNECTED ENTITIES
+              </div>
+
+              <div className="text-xl text-green-400 font-mono mt-2">
+                {
+                  network.connected_entities ??
+                  report.neighbors?.length ??
+                  0
+                }
+              </div>
+
+            </div>
+
+          </div>
+
+        </Section>
+
+      )}
+
+
+      {/* SOURCE EVIDENCE */}
+
+      {report && (
+
+        <Section title="SOURCE EVIDENCE">
+
+          {report.evidence?.length ? (
+
+            <div className="space-y-2">
+
+              {report.evidence.map(
+                (item, index) => (
+
+                  <div
+                    key={index}
+                    className="border border-line bg-black/20 p-3"
+                  >
+
+                    <div className="text-[9px] text-blue-400 font-mono mb-2">
+
+                      EVIDENCE {String(
+                        index + 1
+                      ).padStart(2, "0")}
+
+                    </div>
+
+                    <pre className="whitespace-pre-wrap text-[10px] text-slate-400 leading-relaxed">
+
+                      {typeof item === "string"
+                        ? item
+                        : JSON.stringify(
+                            item,
+                            null,
+                            2
+                          )}
+
+                    </pre>
+
+                  </div>
+
+                )
+              )}
+
+            </div>
+
+          ) : (
+
+            <div className="text-xs text-slate-600 font-mono">
+              NO EXPLICIT EVIDENCE AVAILABLE
+            </div>
+
+          )}
+
+        </Section>
+
+      )}
+
+
+      {/* AI ASSESSMENT */}
+
+      {report && (
+
+        <Section title="AI ASSESSMENT">
+
+          <pre className="whitespace-pre-wrap text-xs text-slate-300 leading-relaxed">
+
+            {report.summary ||
+              "Generating assessment..."}
+
+          </pre>
+
+        </Section>
+
+      )}
+
+
+      {/* PROCESSING */}
+
+      {!report &&
+        status !== "IDLE" &&
+        status !== "FAILED" && (
+
+          <div className="panel p-10 text-center">
+
+            <div className="text-xs text-slate-500 font-mono">
+              DOSSIER PROCESSING...
+            </div>
+
+            <div className="text-[9px] text-slate-700 font-mono mt-2">
+              GRAPH CONTEXT → AI ASSESSMENT → DOSSIER
+            </div>
+
+          </div>
 
         )}
 
 
-        {!report &&
-          status === "IDLE" && (
+      {/* EMPTY */}
 
-            <div className="p-8 text-center text-xs text-slate-600 font-mono">
+      {!report &&
+        status === "IDLE" && (
 
+          <div className="panel p-10 text-center">
+
+            <div className="text-xs text-slate-600 font-mono">
               SELECT AN ENTITY TO GENERATE A DOSSIER
-
             </div>
 
-          )}
+          </div>
 
-
-        {!report &&
-          status !== "IDLE" &&
-          status !== "FAILED" && (
-
-            <div className="p-8 text-center text-xs text-slate-500 font-mono">
-
-              DOSSIER PROCESSING...
-
-            </div>
-
-          )}
-
-      </div>
+        )}
 
     </div>
 
   );
+
 }
