@@ -31,7 +31,7 @@ export default function Login() {
         <div className="flex items-center gap-3 mb-5">
           <ShieldCheck className="text-blue-400" />
           <div>
-            <div className="font-mono text-white tracking-widest">GOTHAM</div>
+            <div className="font-mono text-white tracking-widest">Vigilant</div>
             <div className="eyebrow">SECURE ACCESS GATEWAY</div>
           </div>
         </div>
