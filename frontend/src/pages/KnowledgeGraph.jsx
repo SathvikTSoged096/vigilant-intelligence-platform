@@ -135,80 +135,112 @@ export default function KnowledgeGraph() {
 
 
   // ============================================================
-  // LOAD TARGET TIMELINE
+  // SELECT ENTITY
   // ============================================================
 
-  const loadTargetTimeline = async (node) => {
+  const handleNodeSelect = (node) => {
 
-    if (!node?.entity_key) {
+    if (!node) {
+      return;
+    }
+
+    setSelectedNode(node);
+
+  };
+
+
+  // ============================================================
+  // LOAD SELECTED ENTITY TIMELINE
+  // ============================================================
+
+  useEffect(() => {
+
+    if (!selectedNode?.entity_key) {
 
       setTimelineEvents([]);
 
       setTimelineError("");
 
-      return;
+      setTimelineLoading(false);
 
+      return;
     }
 
 
-    try {
+    let cancelled = false;
+
+
+    const loadTimeline = async () => {
 
       setTimelineLoading(true);
 
       setTimelineError("");
 
 
-      const response =
-        await getEntityTimeline(
-          node.entity_key
+      try {
+
+        const response =
+          await getEntityTimeline(
+            selectedNode.entity_key
+          );
+
+
+        if (cancelled) {
+          return;
+        }
+
+
+        setTimelineEvents(
+          response.data?.events || []
         );
 
 
-      const events =
-        response.data?.events || [];
+      } catch (error) {
+
+        if (cancelled) {
+          return;
+        }
 
 
-      setTimelineEvents(events);
+        console.error(
+          "TARGET TIMELINE ERROR:",
+          error
+        );
 
 
-    } catch (error) {
-
-      console.error(
-        "TARGET TIMELINE ERROR:",
-        error
-      );
+        setTimelineEvents([]);
 
 
-      setTimelineEvents([]);
+        setTimelineError(
+          error.response?.data?.detail ||
+          error.message ||
+          "Unable to load target timeline."
+        );
 
 
-      setTimelineError(
-        error.response?.data?.detail ||
-        error.message ||
-        "Unable to load target timeline."
-      );
+      } finally {
+
+        if (!cancelled) {
+
+          setTimelineLoading(false);
+
+        }
+
+      }
+
+    };
 
 
-    } finally {
-
-      setTimelineLoading(false);
-
-    }
-
-  };
+    loadTimeline();
 
 
-  // ============================================================
-  // SELECT ENTITY
-  // ============================================================
+    return () => {
 
-  const handleNodeSelect = (node) => {
+      cancelled = true;
 
-    setSelectedNode(node);
+    };
 
-    loadTargetTimeline(node);
-
-  };
+  }, [selectedNode?.entity_key]);
 
 
   // ============================================================
@@ -241,7 +273,9 @@ export default function KnowledgeGraph() {
 
   const openTargetDossier = () => {
 
-    if (!selectedNode) return;
+    if (!selectedNode) {
+      return;
+    }
 
 
     const type =
@@ -250,7 +284,9 @@ export default function KnowledgeGraph() {
       ).toUpperCase();
 
 
-    if (type !== "PERSON") return;
+    if (type !== "PERSON") {
+      return;
+    }
 
 
     if (!selectedNode.entity_key) {
@@ -260,7 +296,6 @@ export default function KnowledgeGraph() {
       );
 
       return;
-
     }
 
 
@@ -269,6 +304,23 @@ export default function KnowledgeGraph() {
         selectedNode.entity_key
       )}`
     );
+
+  };
+
+
+  // ============================================================
+  // CLOSE SELECTED ENTITY
+  // ============================================================
+
+  const closeSelectedEntity = () => {
+
+    setSelectedNode(null);
+
+    setTimelineEvents([]);
+
+    setTimelineError("");
+
+    setTimelineLoading(false);
 
   };
 
@@ -453,15 +505,7 @@ export default function KnowledgeGraph() {
 
             <button
               type="button"
-              onClick={() => {
-
-                setSelectedNode(null);
-
-                setTimelineEvents([]);
-
-                setTimelineError("");
-
-              }}
+              onClick={closeSelectedEntity}
               className="text-[9px] text-slate-600 hover:text-slate-300 font-mono"
             >
               CLOSE
@@ -553,7 +597,7 @@ export default function KnowledgeGraph() {
                   ENTITY KEY
                 </div>
 
-                <div className="mt-1 text-[10px] text-slate-500 font-mono">
+                <div className="mt-1 text-[10px] text-slate-500 font-mono break-all">
                   {selectedNode.entity_key}
                 </div>
 
@@ -653,9 +697,11 @@ export default function KnowledgeGraph() {
           ) : timelineError ? (
 
             <div className="p-5 text-xs text-red-400 font-mono">
+
               TIMELINE ERROR:
               {" "}
               {timelineError}
+
             </div>
 
           ) : timelineEvents.length === 0 ? (
@@ -767,8 +813,10 @@ export default function KnowledgeGraph() {
 
 
                 <div className="text-[9px] text-blue-400 font-mono">
+
                   DEGREE{" "}
                   {node.degree}
+
                 </div>
 
               </button>
