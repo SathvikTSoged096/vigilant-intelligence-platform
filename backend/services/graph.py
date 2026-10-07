@@ -966,27 +966,29 @@ class GraphService:
         )
 
 
-        # ============================================================
-        # TARGET TIMELINE
-        # ============================================================
+        
+
+    # ============================================================
+    # TARGET TIMELINE
+    # ============================================================
 
     @staticmethod
-    async def entity_timeline(entity_key):
+    async def entity_timeline(entity_key
+    ):
 
         records = await neo4j_client.execute(
             """
             MATCH (n:Entity)
-
-            WHERE
-                n.key = $entity_key
+            WHERE n.key = $entity_key
 
             RETURN
                 n.key AS entity_key,
                 n.name AS entity_name,
                 n.type AS entity_type,
                 n.temporal_json AS temporal_json
-            """,
 
+            LIMIT 1
+            """,
             entity_key=entity_key,
         )
 
@@ -999,7 +1001,6 @@ class GraphService:
             temporal = json.loads(
                 data.get("temporal_json") or "[]"
             )
-
         except (
             TypeError,
             json.JSONDecodeError,
@@ -1016,37 +1017,13 @@ class GraphService:
             if not isinstance(event, dict):
                 continue
 
-            timestamp = event.get("value")
-
-            event_type = event.get("type")
-
-            label = (
-                event.get("label")
-                or event.get("description")
-                or event.get("event")
-                or event_type
-                or "TIMELINE EVENT"
-            )
-
             timeline.append(
                 {
-                    "entity_key": data.get(
-                        "entity_key"
-                    ),
-
-                    "entity_name": data.get(
-                        "entity_name"
-                    ),
-
-                    "entity_type": data.get(
-                        "entity_type"
-                    ),
-
-                    "timestamp": timestamp,
-
-                    "type": event_type,
-
-                    "label": label,
+                    "entity_key": data.get("entity_key"),
+                    "entity_name": data.get("entity_name"),
+                    "entity_type": data.get("entity_type"),
+                    "timestamp": event.get("value"),
+                    "type": event.get("type"),
                 }
             )
 
