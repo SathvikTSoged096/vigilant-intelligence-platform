@@ -8,24 +8,27 @@ import {
 } from "react-router-dom";
 
 import {
+  getEntityTimeline,
   getGeospatial,
   getNodes,
   getRelationships,
 } from "../api/graph";
 
-import MapIntelligence from "../components/MapIntelligence";
-
 import Graph from "../components/Graph";
+import MapIntelligence from "../components/MapIntelligence";
+import Timeline from "../components/Timeline";
 
 
 export default function KnowledgeGraph() {
 
   const navigate = useNavigate();
 
-  
 
-  const [nodes, setNodes] =
-    useState([]);
+  // ============================================================
+  // GRAPH STATE
+  // ============================================================
+
+  const [nodes, setNodes] = useState([]);
 
   const [relationships, setRelationships] =
     useState([]);
@@ -33,8 +36,32 @@ export default function KnowledgeGraph() {
   const [points, setPoints] =
     useState([]);
 
+
+  // ============================================================
+  // SELECTED ENTITY
+  // ============================================================
+
   const [selectedNode, setSelectedNode] =
     useState(null);
+
+
+  // ============================================================
+  // TARGET TIMELINE
+  // ============================================================
+
+  const [timelineEvents, setTimelineEvents] =
+    useState([]);
+
+  const [timelineLoading, setTimelineLoading] =
+    useState(false);
+
+  const [timelineError, setTimelineError] =
+    useState("");
+
+
+  // ============================================================
+  // GENERAL STATE
+  // ============================================================
 
   const [loading, setLoading] =
     useState(true);
@@ -69,20 +96,17 @@ export default function KnowledgeGraph() {
 
 
       setNodes(
-        nodesResponse.data?.nodes ||
-        []
+        nodesResponse.data?.nodes || []
       );
 
 
       setRelationships(
-        relationshipsResponse.data?.relationships ||
-        []
+        relationshipsResponse.data?.relationships || []
       );
 
 
       setPoints(
-        geoResponse.data?.points ||
-        []
+        geoResponse.data?.points || []
       );
 
 
@@ -100,11 +124,89 @@ export default function KnowledgeGraph() {
         "Unable to load intelligence graph."
       );
 
+
     } finally {
 
       setLoading(false);
 
     }
+
+  };
+
+
+  // ============================================================
+  // LOAD TARGET TIMELINE
+  // ============================================================
+
+  const loadTargetTimeline = async (node) => {
+
+    if (!node?.entity_key) {
+
+      setTimelineEvents([]);
+
+      setTimelineError("");
+
+      return;
+
+    }
+
+
+    try {
+
+      setTimelineLoading(true);
+
+      setTimelineError("");
+
+
+      const response =
+        await getEntityTimeline(
+          node.entity_key
+        );
+
+
+      const events =
+        response.data?.events || [];
+
+
+      setTimelineEvents(events);
+
+
+    } catch (error) {
+
+      console.error(
+        "TARGET TIMELINE ERROR:",
+        error
+      );
+
+
+      setTimelineEvents([]);
+
+
+      setTimelineError(
+        error.response?.data?.detail ||
+        error.message ||
+        "Unable to load target timeline."
+      );
+
+
+    } finally {
+
+      setTimelineLoading(false);
+
+    }
+
+  };
+
+
+  // ============================================================
+  // SELECT ENTITY
+  // ============================================================
+
+  const handleNodeSelect = (node) => {
+
+    setSelectedNode(node);
+
+    loadTargetTimeline(node);
 
   };
 
@@ -117,11 +219,13 @@ export default function KnowledgeGraph() {
 
     loadGraph();
 
+
     const interval =
       setInterval(
         loadGraph,
         3000
       );
+
 
     return () =>
       clearInterval(
@@ -136,21 +240,37 @@ export default function KnowledgeGraph() {
   // ============================================================
 
   const openTargetDossier = () => {
-  if (!selectedNode) return;
 
-  const type = String(selectedNode.type || "").toUpperCase();
+    if (!selectedNode) return;
 
-  if (type !== "PERSON") return;
 
-  if (!selectedNode.entity_key) {
-    console.error("Selected PERSON has no entity_key.");
-    return;
-  }
+    const type =
+      String(
+        selectedNode.type || ""
+      ).toUpperCase();
 
-  navigate(
-    `/reports?entity=${encodeURIComponent(selectedNode.entity_key)}`
-  );
-};
+
+    if (type !== "PERSON") return;
+
+
+    if (!selectedNode.entity_key) {
+
+      console.error(
+        "Selected PERSON has no entity_key."
+      );
+
+      return;
+
+    }
+
+
+    navigate(
+      `/reports?entity=${encodeURIComponent(
+        selectedNode.entity_key
+      )}`
+    );
+
+  };
 
 
   // ============================================================
@@ -174,9 +294,11 @@ export default function KnowledgeGraph() {
             GRAPH INTELLIGENCE
           </div>
 
+
           <h1 className="text-xl text-white font-mono">
             KNOWLEDGE GRAPH
           </h1>
+
 
           <div className="text-xs text-slate-500 mt-1">
             Entity relationships, network structure and
@@ -270,9 +392,12 @@ export default function KnowledgeGraph() {
           </div>
 
           <div className="font-mono text-[9px] text-slate-500">
-            {nodes.length} NODES
-            {" / "}
-            {relationships.length} EDGES
+
+            {nodes.length}
+            {" NODES / "}
+            {relationships.length}
+            {" EDGES"}
+
           </div>
 
         </div>
@@ -303,9 +428,7 @@ export default function KnowledgeGraph() {
           <Graph
             nodes={nodes}
             relationships={relationships}
-            onNodeSelect={
-              setSelectedNode
-            }
+            onNodeSelect={handleNodeSelect}
           />
 
         )}
@@ -330,9 +453,15 @@ export default function KnowledgeGraph() {
 
             <button
               type="button"
-              onClick={() =>
-                setSelectedNode(null)
-              }
+              onClick={() => {
+
+                setSelectedNode(null);
+
+                setTimelineEvents([]);
+
+                setTimelineError("");
+
+              }}
               className="text-[9px] text-slate-600 hover:text-slate-300 font-mono"
             >
               CLOSE
@@ -342,6 +471,7 @@ export default function KnowledgeGraph() {
 
 
           <div className="p-4">
+
 
             {/* ==================================================
                 ENTITY INFORMATION
@@ -490,6 +620,64 @@ export default function KnowledgeGraph() {
 
 
       {/* ======================================================
+          TARGET TIMELINE
+      ====================================================== */}
+
+      {selectedNode && (
+
+        <div className="panel">
+
+          <div className="p-3 border-b border-line flex items-center justify-between">
+
+            <div className="font-mono text-xs text-slate-300">
+              TARGET TIMELINE
+            </div>
+
+            <div className="font-mono text-[9px] text-slate-500">
+
+              {String(
+                selectedNode.type || ""
+              ).toUpperCase()}
+
+            </div>
+
+          </div>
+
+
+          {timelineLoading ? (
+
+            <div className="p-5 text-xs text-slate-500 font-mono">
+              LOADING TARGET TIMELINE...
+            </div>
+
+          ) : timelineError ? (
+
+            <div className="p-5 text-xs text-red-400 font-mono">
+              TIMELINE ERROR:
+              {" "}
+              {timelineError}
+            </div>
+
+          ) : timelineEvents.length === 0 ? (
+
+            <div className="p-5 text-xs text-slate-600 font-mono">
+              NO TEMPORAL EVENTS FOR SELECTED ENTITY
+            </div>
+
+          ) : (
+
+            <Timeline
+              events={timelineEvents}
+            />
+
+          )}
+
+        </div>
+
+      )}
+
+
+      {/* ======================================================
           GEOINT
       ====================================================== */}
 
@@ -560,9 +748,7 @@ export default function KnowledgeGraph() {
                 type="button"
                 key={node.id}
                 onClick={() =>
-                  setSelectedNode(
-                    node
-                  )
+                  handleNodeSelect(node)
                 }
                 className="w-full text-left p-3 border-b border-line flex justify-between hover:bg-white/[0.02] transition"
               >
@@ -581,8 +767,7 @@ export default function KnowledgeGraph() {
 
 
                 <div className="text-[9px] text-blue-400 font-mono">
-                  DEGREE
-                  {" "}
+                  DEGREE{" "}
                   {node.degree}
                 </div>
 
@@ -593,6 +778,7 @@ export default function KnowledgeGraph() {
         )}
 
       </div>
+
 
     </div>
 
