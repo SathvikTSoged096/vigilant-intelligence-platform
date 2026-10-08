@@ -10,7 +10,7 @@ export default function Settings() {
 
       try {
 
-        const response = await fetch("/api/v1/health");
+        const response = await fetch("/health");
 
         if (response.ok) {
           setApiStatus("ONLINE");

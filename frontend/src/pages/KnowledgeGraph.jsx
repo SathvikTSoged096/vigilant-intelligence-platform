@@ -10,6 +10,7 @@ import {
 import {
   getEntityTimeline,
   getGeospatial,
+  getGeospatialAssociatedEntities,
   getNodes,
   getRelationships,
 } from "../api/graph";
@@ -28,7 +29,8 @@ export default function KnowledgeGraph() {
   // GRAPH STATE
   // ============================================================
 
-  const [nodes, setNodes] = useState([]);
+  const [nodes, setNodes] =
+    useState([]);
 
   const [relationships, setRelationships] =
     useState([]);
@@ -135,6 +137,71 @@ export default function KnowledgeGraph() {
 
 
   // ============================================================
+  // LOAD TARGET TIMELINE
+  // ============================================================
+
+  const loadTargetTimeline = async (node) => {
+
+    if (!node?.entity_key) {
+
+      setTimelineEvents([]);
+
+      setTimelineError("");
+
+      return;
+
+    }
+
+
+    try {
+
+      setTimelineLoading(true);
+
+      setTimelineError("");
+
+
+      const response =
+        await getEntityTimeline(
+          node.entity_key
+        );
+
+
+      const events =
+        response.data?.events || [];
+
+
+      setTimelineEvents(
+        events
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        "TARGET TIMELINE ERROR:",
+        error
+      );
+
+
+      setTimelineEvents([]);
+
+      setTimelineError(
+        error.response?.data?.detail ||
+        error.message ||
+        "Unable to load target timeline."
+      );
+
+
+    } finally {
+
+      setTimelineLoading(false);
+
+    }
+
+  };
+
+
+  // ============================================================
   // SELECT ENTITY
   // ============================================================
 
@@ -146,123 +213,164 @@ export default function KnowledgeGraph() {
 
     setSelectedNode(node);
 
+    loadTargetTimeline(node);
+
   };
 
 
   // ============================================================
-  // LOAD SELECTED ENTITY TIMELINE
+  // GEOINT → ENTITY RESOLUTION
   // ============================================================
 
-  useEffect(() => {
+  const handleLocationSelect = async (point) => {
 
-    if (!selectedNode?.entity_key) {
-
-      setTimelineEvents([]);
-
-      setTimelineError("");
-
-      setTimelineLoading(false);
-
+    if (!point) {
       return;
     }
 
 
-    let cancelled = false;
+    if (!point.entity_id) {
+
+      setError(
+        "Selected GEOINT location has no entity identifier."
+      );
+
+      return;
+
+    }
 
 
-    const loadTimeline = async () => {
+    try {
 
-      setTimelineLoading(true);
-
-      setTimelineError("");
+      setError("");
 
 
-      try {
-
-        const response =
-          await getEntityTimeline(
-            selectedNode.entity_key
-          );
-
-
-        if (cancelled) {
-          return;
-        }
-
-
-        setTimelineEvents(
-          response.data?.events || []
+      const response =
+        await getGeospatialAssociatedEntities(
+          point.entity_id
         );
 
 
-      } catch (error) {
-
-        if (cancelled) {
-          return;
-        }
+      const associatedEntities =
+        response.data?.entities || [];
 
 
-        console.error(
-          "TARGET TIMELINE ERROR:",
-          error
+      console.log(
+        "GEOINT ASSOCIATED ENTITIES:",
+        associatedEntities
+      );
+
+
+      if (!associatedEntities.length) {
+
+        setError(
+          `No associated entities found for ${
+            point.location_name ||
+            point.name ||
+            "selected location"
+          }.`
         );
 
-
-        setTimelineEvents([]);
-
-
-        setTimelineError(
-          error.response?.data?.detail ||
-          error.message ||
-          "Unable to load target timeline."
-        );
-
-
-      } finally {
-
-        if (!cancelled) {
-
-          setTimelineLoading(false);
-
-        }
+        return;
 
       }
 
-    };
+
+      // --------------------------------------------------------
+      // PREFER PERSON
+      // --------------------------------------------------------
+
+      const person =
+        associatedEntities.find(
+          (entity) =>
+            String(
+              entity.type || ""
+            ).toUpperCase() ===
+            "PERSON"
+        );
 
 
-    loadTimeline();
+      const selectedEntity =
+        person ||
+        associatedEntities[0];
 
 
-    return () => {
+      // --------------------------------------------------------
+      // FIND THE ENTITY IN THE GRAPH
+      // --------------------------------------------------------
 
-      cancelled = true;
+      const graphNode =
+        nodes.find(
+          (node) =>
+            String(node.id) ===
+            String(selectedEntity.id)
+        );
 
-    };
 
-  }, [selectedNode?.entity_key]);
+      if (graphNode) {
+
+        handleNodeSelect(
+          graphNode
+        );
+
+        return;
+
+      }
+
+
+      // --------------------------------------------------------
+      // FALLBACK
+      // --------------------------------------------------------
+
+      handleNodeSelect({
+
+        id:
+          selectedEntity.id,
+
+        entity_key:
+          selectedEntity.entity_key,
+
+        name:
+          selectedEntity.name,
+
+        type:
+          selectedEntity.type,
+
+        confidence:
+          selectedEntity.confidence,
+
+        degree:
+          0,
+
+      });
+
+
+    } catch (error) {
+
+      console.error(
+        "GEOINT ENTITY RESOLUTION ERROR:",
+        error
+      );
+
+
+      setError(
+        error.response?.data?.detail ||
+        error.message ||
+        "Unable to resolve GEOINT location."
+      );
+
+    }
+
+  };
 
 
   // ============================================================
-  // LIVE GRAPH SYNC
+  // INITIAL GRAPH LOAD
   // ============================================================
 
   useEffect(() => {
 
     loadGraph();
-
-
-    const interval =
-      setInterval(
-        loadGraph,
-        3000
-      );
-
-
-    return () =>
-      clearInterval(
-        interval
-      );
 
   }, []);
 
@@ -296,6 +404,7 @@ export default function KnowledgeGraph() {
       );
 
       return;
+
     }
 
 
@@ -304,23 +413,6 @@ export default function KnowledgeGraph() {
         selectedNode.entity_key
       )}`
     );
-
-  };
-
-
-  // ============================================================
-  // CLOSE SELECTED ENTITY
-  // ============================================================
-
-  const closeSelectedEntity = () => {
-
-    setSelectedNode(null);
-
-    setTimelineEvents([]);
-
-    setTimelineError("");
-
-    setTimelineLoading(false);
 
   };
 
@@ -361,7 +453,7 @@ export default function KnowledgeGraph() {
 
 
         <div className="text-[9px] text-slate-600 font-mono">
-          LIVE GRAPH SYNC
+          GRAPH READY
         </div>
 
       </div>
@@ -389,6 +481,7 @@ export default function KnowledgeGraph() {
       ====================================================== */}
 
       <div className="grid grid-cols-3 gap-3">
+
 
         <div className="panel p-3">
 
@@ -443,6 +536,7 @@ export default function KnowledgeGraph() {
             NETWORK GRAPH
           </div>
 
+
           <div className="font-mono text-[9px] text-slate-500">
 
             {nodes.length}
@@ -480,7 +574,9 @@ export default function KnowledgeGraph() {
           <Graph
             nodes={nodes}
             relationships={relationships}
-            onNodeSelect={handleNodeSelect}
+            onNodeSelect={
+              handleNodeSelect
+            }
           />
 
         )}
@@ -496,6 +592,7 @@ export default function KnowledgeGraph() {
 
         <div className="panel">
 
+
           <div className="p-3 border-b border-line flex items-center justify-between">
 
             <div className="font-mono text-xs text-slate-300">
@@ -505,7 +602,21 @@ export default function KnowledgeGraph() {
 
             <button
               type="button"
-              onClick={closeSelectedEntity}
+              onClick={() => {
+
+                setSelectedNode(
+                  null
+                );
+
+                setTimelineEvents(
+                  []
+                );
+
+                setTimelineError(
+                  ""
+                );
+
+              }}
               className="text-[9px] text-slate-600 hover:text-slate-300 font-mono"
             >
               CLOSE
@@ -522,6 +633,7 @@ export default function KnowledgeGraph() {
             ================================================== */}
 
             <div className="grid grid-cols-4 gap-4">
+
 
               <div>
 
@@ -713,7 +825,9 @@ export default function KnowledgeGraph() {
           ) : (
 
             <Timeline
-              events={timelineEvents}
+              events={
+                timelineEvents
+              }
             />
 
           )}
@@ -752,6 +866,9 @@ export default function KnowledgeGraph() {
 
           <MapIntelligence
             points={points}
+            onLocationSelect={
+              handleLocationSelect
+            }
           />
 
         )}
@@ -794,7 +911,9 @@ export default function KnowledgeGraph() {
                 type="button"
                 key={node.id}
                 onClick={() =>
-                  handleNodeSelect(node)
+                  handleNodeSelect(
+                    node
+                  )
                 }
                 className="w-full text-left p-3 border-b border-line flex justify-between hover:bg-white/[0.02] transition"
               >
@@ -815,6 +934,7 @@ export default function KnowledgeGraph() {
                 <div className="text-[9px] text-blue-400 font-mono">
 
                   DEGREE{" "}
+
                   {node.degree}
 
                 </div>

@@ -21,3 +21,13 @@ export const getEntityTimeline = (entityKey) =>
 
 export const getGeospatial = () =>
   client.get("/graph/geospatial");
+
+
+export const getGeospatialAssociatedEntities = (
+  entityId
+) =>
+  client.get(
+    `/graph/geospatial/associated/${encodeURIComponent(
+      entityId
+    )}`
+  );

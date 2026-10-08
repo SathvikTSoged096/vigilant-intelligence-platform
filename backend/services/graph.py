@@ -652,6 +652,230 @@ class GraphService:
 
         return locations[:5000]
 
+
+
+
+    # ============================================================
+    # GEOINT → ASSOCIATED ENTITIES
+    # ============================================================
+
+    @staticmethod
+    async def geospatial_associated(entity_id):
+
+        records = await neo4j_client.execute(
+            """
+            MATCH (selected:Entity)
+            WHERE elementId(selected) = $entity_id
+            RETURN
+                elementId(selected) AS entity_id,
+                selected.key AS entity_key,
+                selected.name AS name,
+                selected.type AS type,
+                selected.locations_json AS locations_json
+            LIMIT 1
+            """,
+            entity_id=entity_id,
+        )
+
+        if not records:
+            return None
+
+        selected = dict(records[0])
+
+        # Strongest association: entities explicitly connected to
+        # the selected GEOINT node through a RELATED relationship.
+        connected_records = await neo4j_client.execute(
+            """
+            MATCH (selected:Entity)-[r:RELATED]-(entity:Entity)
+            WHERE elementId(selected) = $entity_id
+            RETURN
+                elementId(entity) AS id,
+                entity.key AS entity_key,
+                entity.name AS name,
+                entity.type AS type,
+                entity.confidence AS confidence,
+                r.type AS relationship,
+                r.evidence AS evidence,
+                r.document_id AS document_id
+            LIMIT 500
+            """,
+            entity_id=entity_id,
+        )
+
+        associated = []
+
+        for record in connected_records:
+            entity = dict(record)
+            associated.append({
+                "id": entity.get("id"),
+                "entity_key": entity.get("entity_key"),
+                "name": entity.get("name"),
+                "type": entity.get("type"),
+                "confidence": entity.get("confidence"),
+                "relationship": entity.get("relationship"),
+                "evidence": entity.get("evidence"),
+                "document_id": entity.get("document_id"),
+                "association": "GRAPH_RELATIONSHIP",
+            })
+
+        if associated:
+            associated.sort(
+                key=lambda entity: (
+                    0 if str(entity.get("type") or "").upper() == "PERSON" else 1,
+                    str(entity.get("name") or "").lower(),
+                )
+            )
+            return associated
+
+        # Fallback: compare location metadata. Do not require the
+        # candidate entity itself to have locations_json.
+        try:
+            selected_locations = json.loads(
+                selected.get("locations_json") or "[]"
+            )
+        except (TypeError, json.JSONDecodeError):
+            selected_locations = []
+
+        if not isinstance(selected_locations, list):
+            selected_locations = []
+
+        def normalize(value):
+            if value is None:
+                return ""
+            return str(value).strip().lower()
+
+        selected_name = normalize(selected.get("name"))
+        selected_keys = set()
+
+        if selected_name:
+            selected_keys.add(("name", selected_name))
+
+        for location in selected_locations:
+            if not isinstance(location, dict):
+                continue
+
+            name = normalize(location.get("name"))
+            address = normalize(location.get("address"))
+            city = normalize(location.get("city"))
+            state = normalize(location.get("state"))
+            country = normalize(location.get("country"))
+            latitude = location.get("latitude")
+            longitude = location.get("longitude")
+
+            if name:
+                selected_keys.add(("name", name))
+            if address:
+                selected_keys.add(("address", address))
+
+            try:
+                if latitude is not None and longitude is not None:
+                    selected_keys.add((
+                        "coordinates",
+                        round(float(latitude), 6),
+                        round(float(longitude), 6),
+                    ))
+            except (TypeError, ValueError):
+                pass
+
+            region = (city, state, country)
+            if any(region):
+                selected_keys.add(("region", region))
+
+        all_records = await neo4j_client.execute(
+            """
+            MATCH (n:Entity)
+            RETURN
+                elementId(n) AS entity_id,
+                n.key AS entity_key,
+                n.name AS name,
+                n.type AS type,
+                n.confidence AS confidence,
+                n.locations_json AS locations_json
+            LIMIT 5000
+            """
+        )
+
+        for record in all_records:
+            entity = dict(record)
+
+            if str(entity.get("entity_id")) == str(entity_id):
+                continue
+
+            try:
+                locations = json.loads(entity.get("locations_json") or "[]")
+            except (TypeError, json.JSONDecodeError):
+                locations = []
+
+            if not isinstance(locations, list):
+                continue
+
+            matched = False
+
+            for location in locations:
+                if not isinstance(location, dict):
+                    continue
+
+                name = normalize(location.get("name"))
+                address = normalize(location.get("address"))
+                city = normalize(location.get("city"))
+                state = normalize(location.get("state"))
+                country = normalize(location.get("country"))
+
+                if name and ("name", name) in selected_keys:
+                    matched = True
+                if address and ("address", address) in selected_keys:
+                    matched = True
+
+                try:
+                    latitude = location.get("latitude")
+                    longitude = location.get("longitude")
+                    if latitude is not None and longitude is not None:
+                        if (
+                            "coordinates",
+                            round(float(latitude), 6),
+                            round(float(longitude), 6),
+                        ) in selected_keys:
+                            matched = True
+                except (TypeError, ValueError):
+                    pass
+
+                region = (city, state, country)
+                if any(region) and ("region", region) in selected_keys:
+                    matched = True
+
+                if matched:
+                    break
+
+            if matched:
+                associated.append({
+                    "id": entity.get("entity_id"),
+                    "entity_key": entity.get("entity_key"),
+                    "name": entity.get("name"),
+                    "type": entity.get("type"),
+                    "confidence": entity.get("confidence"),
+                    "relationship": None,
+                    "evidence": None,
+                    "document_id": None,
+                    "association": "LOCATION_MATCH",
+                })
+
+        unique = {}
+        for entity in associated:
+            key = str(entity.get("id"))
+            if key not in unique:
+                unique[key] = entity
+
+        associated = list(unique.values())
+
+        associated.sort(
+            key=lambda entity: (
+                0 if str(entity.get("type") or "").upper() == "PERSON" else 1,
+                str(entity.get("name") or "").lower(),
+            )
+        )
+
+        return associated
+
     # ============================================================
     # TARGET CONTEXT FOR AI REPORT
     # ============================================================
